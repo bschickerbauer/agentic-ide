@@ -1,0 +1,179 @@
+{
+  "version": 1,
+  "skills": {
+    "airunway-aks-setup": {
+      "source": "microsoft/azure-skills",
+      "sourceType": "github",
+      "skillPath": "skills/airunway-aks-setup/SKILL.md",
+      "computedHash": "b4ae380f8815f23b3109093efcd9544579a9564e21aabef19bc5191568101f32"
+    },
+    "appinsights-instrumentation": {
+      "source": "microsoft/azure-skills",
+      "sourceType": "github",
+      "skillPath": "skills/appinsights-instrumentation/SKILL.md",
+      "computedHash": "4dc3e1ab77e28f8606393d6cca111214ce75053ce539476efe90fae35fb01b36"
+    },
+    "azure-ai": {
+      "source": "microsoft/azure-skills",
+      "sourceType": "github",
+      "skillPath": "skills/azure-ai/SKILL.md",
+      "computedHash": "00533909740269b80dfaa1edd24b0ce86f2fc452e977c811647839353c793025"
+    },
+    "azure-aigateway": {
+      "source": "microsoft/azure-skills",
+      "sourceType": "github",
+      "skillPath": "skills/azure-aigateway/SKILL.md",
+      "computedHash": "d8073cb540d8799c446148a2605965d9cd0ff2205c0fe8911c4350df499c46d5"
+    },
+    "azure-cloud-migrate": {
+      "source": "microsoft/azure-skills",
+      "sourceType": "github",
+      "skillPath": "skills/azure-cloud-migrate/SKILL.md",
+      "computedHash": "9335f809ddf550d45f116f8fa1e3ec6bc114c5d6ad8eaf7f519a90846b41e419"
+    },
+    "azure-compliance": {
+      "source": "microsoft/azure-skills",
+      "sourceType": "github",
+      "skillPath": "skills/azure-compliance/SKILL.md",
+      "computedHash": "32164055b7a363d813120df546b08c95c91128880a8a336a2e8b9b754c00065c"
+    },
+    "azure-compute": {
+      "source": "microsoft/azure-skills",
+      "sourceType": "github",
+      "skillPath": "skills/azure-compute/SKILL.md",
+      "computedHash": "6c87d6a2e509c45cc761c84df8d0c302015470d1f061f5eaa8109408b0bf5480"
+    },
+    "azure-cost": {
+      "source": "microsoft/azure-skills",
+      "sourceType": "github",
+      "skillPath": "skills/azure-cost/SKILL.md",
+      "computedHash": "1288232f3fb8ed8d591b3ab8960543594b57524d13fb0124515ae4e8c4e390ce"
+    },
+    "azure-deploy": {
+      "source": "microsoft/azure-skills",
+      "sourceType": "github",
+      "skillPath": "skills/azure-deploy/SKILL.md",
+      "computedHash": "b7de6dbbd1e95ceeca96f4937a3cae446d1a5f39dbb06ee5e0def30eb8bea15f"
+    },
+    "azure-diagnostics": {
+      "source": "microsoft/azure-skills",
+      "sourceType": "github",
+      "skillPath": "skills/azure-diagnostics/SKILL.md",
+      "computedHash": "3311cd59d68193523c96eadd29c4339e41d939b6180997d980f35589c5afef05"
+    },
+    "azure-enterprise-infra-planner": {
+      "source": "microsoft/azure-skills",
+      "sourceType": "github",
+      "skillPath": "skills/azure-enterprise-infra-planner/SKILL.md",
+      "computedHash": "d47b175ae17d2cfa7bfab34acf5631026a59fb0b3fabcbdd80ee9e1bc49ec9c0"
+    },
+    "azure-kubernetes": {
+      "source": "microsoft/azure-skills",
+      "sourceType": "github",
+      "skillPath": "skills/azure-kubernetes/SKILL.md",
+      "computedHash": "390f198d1c2033953729996bd3fa70dc3d9cef9775207dae150d8bc93182f07c"
+    },
+    "azure-reliability": {
+      "source": "microsoft/azure-skills",
+      "sourceType": "github",
+      "skillPath": "skills/azure-reliability/SKILL.md",
+      "computedHash": "1730a0307a3a18d166cde0cf8ebb65e313c24eef86a8d74c7a72e6d172881329"
+    },
+    "azure-resource-lookup": {
+      "source": "microsoft/azure-skills",
+      "sourceType": "github",
+      "skillPath": "skills/azure-resource-lookup/SKILL.md",
+      "computedHash": "3a5fbee5eb1b888b8044e9618cdcdf6b2e4d4727be400d4bd3718379272d4885"
+    },
+    "azure-resource-visualizer": {
+      "source": "microsoft/azure-skills",
+      "sourceType": "github",
+      "skillPath": "skills/azure-resource-visualizer/SKILL.md",
+      "computedHash": "d96aa219d8c74e26d5a18f2419b8f362c348f60b0bc79d7c8e11c4010293083e"
+    },
+    "azure-storage": {
+      "source": "microsoft/azure-skills",
+      "sourceType": "github",
+      "skillPath": "skills/azure-storage/SKILL.md",
+      "computedHash": "f6439393f103bedc8de84abbb73438347b9579df9816a1eb08df3f3a8ffac152"
+    },
+    "azure-upgrade": {
+      "source": "microsoft/azure-skills",
+      "sourceType": "github",
+      "skillPath": "skills/azure-upgrade/SKILL.md",
+      "computedHash": "1f8fbc961261d2bf065e23ad761cf3a313c808e84655015c6838c23bea224d55"
+    },
+    "azure-validate": {
+      "source": "microsoft/azure-skills",
+      "sourceType": "github",
+      "skillPath": "skills/azure-validate/SKILL.md",
+      "computedHash": "c8b47ccbea6cd7de35e966f6f557799d0c68489b57bd0fe35ac17c0cb5da0097"
+    },
+    "code-review": {
+      "source": "vectorize-io/hindsight",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/code-review/SKILL.md",
+      "computedHash": "b7e168a7f9295a9fb9d318658c8827edd34b27e06e4583d96111ae0bb4e69751"
+    },
+    "create-agent": {
+      "source": "vectorize-io/hindsight",
+      "sourceType": "github",
+      "skillPath": "hindsight-integrations/claude-code/skills/create-agent/SKILL.md",
+      "computedHash": "0b98028ab8aaaa9b2e350ded0f8cc0283ba688b961282c0816c402ee0431d087"
+    },
+    "entra-agent-id": {
+      "source": "microsoft/azure-skills",
+      "sourceType": "github",
+      "skillPath": "skills/entra-agent-id/SKILL.md",
+      "computedHash": "7c107053549ee74724ff299ccf9ce0efffeb156866e792533228dc7b03c77097"
+    },
+    "entra-app-registration": {
+      "source": "microsoft/azure-skills",
+      "sourceType": "github",
+      "skillPath": "skills/entra-app-registration/SKILL.md",
+      "computedHash": "f78cb4466fa387b9f13c63a3e0ed8eb11fe7bb62740663d8bd21cd0f09927bee"
+    },
+    "hindsight-architect": {
+      "source": "vectorize-io/hindsight",
+      "sourceType": "github",
+      "skillPath": "skills/hindsight-architect/SKILL.md",
+      "computedHash": "cbdd6ea43824251e28b7eeb3114f37afc60d4efcf66ac02fbd3a2fe5fbe4d5c8"
+    },
+    "hindsight-cloud": {
+      "source": "vectorize-io/hindsight",
+      "sourceType": "github",
+      "skillPath": "skills/hindsight-cloud/SKILL.md",
+      "computedHash": "568d2b680d69312c850aabc5bca38103aa52c0595b6d3ed80756aa424b639b90"
+    },
+    "hindsight-docs": {
+      "source": "vectorize-io/hindsight",
+      "sourceType": "github",
+      "skillPath": "skills/hindsight-docs/SKILL.md",
+      "computedHash": "d50e98d39bd374b3dfe23d2914b5027a80b7203bd73c4b10fedf1fc2ff527f9c"
+    },
+    "hindsight-local": {
+      "source": "vectorize-io/hindsight",
+      "sourceType": "github",
+      "skillPath": "skills/hindsight-local/SKILL.md",
+      "computedHash": "21aed53045c6dc844f7e13df11d79e6a983542bf51f0359bf845444264514de1"
+    },
+    "hindsight-self-hosted": {
+      "source": "vectorize-io/hindsight",
+      "sourceType": "github",
+      "skillPath": "skills/hindsight-self-hosted/SKILL.md",
+      "computedHash": "288ef59df6e6a4c6dde491f1d967186f86d2d00c4f79dbaf3667213c4346c1dc"
+    },
+    "hs-release": {
+      "source": "vectorize-io/hindsight",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/hs-release/SKILL.md",
+      "computedHash": "904bb2c4997cc458c5bd55da541ad8aeff0051fb761bd6918395e76d82fc9469"
+    },
+    "microsoft-foundry": {
+      "source": "microsoft/azure-skills",
+      "sourceType": "github",
+      "skillPath": "skills/microsoft-foundry/SKILL.md",
+      "computedHash": "27004937b1d713c74bb328dbb8e6fd741cdc42a5cb2d020d7b76d3b28cb4391b"
+    }
+  }
+}

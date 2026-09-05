@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hindsight on Azure — Shared Agent Memory Architecture</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js" integrity="sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js" integrity="sha384-en/ztfPSRkGfME4KIm05joYXynqzUgbsG5nMrj/xEFAHXkeZfO3yMK8QQ+mP7p1/" crossorigin="anonymous"></script>
+  <style>
+    :root {
+      --andritz-blue: #0075be;
+      --andritz-blue-75: #4098ce;
+      --andritz-blue-50: #7fbade;
+      --andritz-blue-25: #bfdcef;
+      --andritz-dark-blue: #003a70;
+      --andritz-dark-blue-25: #bfcedb;
+      --andritz-yellow: #eecd00;
+      --andritz-yellow-25: #fbf2bf;
+      --andritz-orange: #ee7203;
+      --andritz-orange-25: #fddfc4;
+      --andritz-green: #89a429;
+      --andritz-green-25: #e1e8c9;
+      --andritz-dark-green: #4e5530;
+      --andritz-gray: #9d9e9f;
+      --andritz-gray-50: #cececf;
+      --andritz-gray-25: #e6e7e7;
+      --andritz-dark-gray: #585d67;
+      --andritz-dark-gray-75: #82868d;
+      --font-display: 'Barlow Condensed', 'Arial Narrow', Arial, sans-serif;
+      --font-body: 'Barlow', Arial, Helvetica, sans-serif;
+      --radius-sm: 2px;
+      --radius-md: 4px;
+      --radius-lg: 8px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: var(--font-body);
+      background: #ffffff;
+      min-height: 100vh;
+      padding: 2rem;
+      color: #000000;
+    }
+
+    .container { max-width: 1240px; margin: 0 auto; }
+
+    .header { margin-bottom: 1.5rem; }
+
+    .header-row {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 0.35rem;
+    }
+
+    .signet { width: 40px; flex-shrink: 0; }
+
+    .pulse-dot {
+      width: 10px;
+      height: 10px;
+      background: var(--andritz-blue);
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    h1 {
+      font-family: var(--font-display);
+      font-size: 1.9rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+      color: var(--andritz-dark-blue);
+      line-height: 1.05;
+    }
+
+    .subtitle {
+      color: var(--andritz-dark-gray);
+      font-size: 0.875rem;
+      margin-left: 3.5rem;
+    }
+
+    .diagram-container {
+      background: #ffffff;
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--andritz-gray-50);
+      box-shadow: 0 2px 8px rgba(0, 58, 112, 0.10);
+      padding: 1.25rem;
+      overflow-x: auto;
+    }
+
+    svg.diagram { width: 100%; min-width: 980px; display: block; }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1rem;
+      margin-top: 1.5rem;
+    }
+
+    .card {
+      background: #ffffff;
+      border: 1px solid var(--andritz-gray-25);
+      border-top: 4px solid var(--andritz-blue);
+      border-radius: var(--radius-md);
+      box-shadow: 0 2px 8px rgba(0, 58, 112, 0.08);
+      padding: 1.1rem 1.25rem;
+    }
+
+    .card.data { border-top-color: var(--andritz-dark-blue); }
+    .card.models { border-top-color: var(--andritz-green); }
+    .card.security { border-top-color: var(--andritz-orange); }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.65rem;
+    }
+
+    .card-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .card-dot.darkblue { background: var(--andritz-dark-blue); }
+    .card-dot.green { background: var(--andritz-green); }
+    .card-dot.orange { background: var(--andritz-orange); }
+
+    .card h3 {
+      font-family: var(--font-display);
+      font-size: 1.05rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--andritz-dark-blue);
+    }
+
+    .card ul {
+      list-style: none;
+      color: var(--andritz-dark-gray);
+      font-size: 0.8rem;
+      line-height: 1.45;
+    }
+
+    .card li { margin-bottom: 0.3rem; }
+    .card code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.72rem;
+      background: var(--andritz-gray-25);
+      border-radius: var(--radius-sm);
+      padding: 0 3px;
+    }
+
+    .footer {
+      text-align: center;
+      margin-top: 1.5rem;
+      color: var(--andritz-dark-gray-75);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 500;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 0.5rem;
+      margin-left: auto;
+      flex-shrink: 0;
+      align-items: center;
+    }
+    .toolbar-toggle {
+      background: transparent;
+      border: none;
+      color: var(--andritz-gray);
+      cursor: pointer;
+      font-size: 1.25rem;
+      line-height: 1;
+      padding: 0.25rem 0.5rem;
+      border-radius: var(--radius-md);
+      transition: color 0.2s, background 0.2s;
+    }
+    .toolbar-toggle:hover { color: var(--andritz-dark-gray); background: var(--andritz-gray-25); }
+    .toolbar-actions { display: none; gap: 0.5rem; }
+    .toolbar.expanded .toolbar-actions { display: flex; }
+    .toolbar-actions button {
+      background: #ffffff;
+      border: 1px solid var(--andritz-blue);
+      color: var(--andritz-blue);
+      padding: 0.375rem 0.75rem;
+      border-radius: var(--radius-md);
+      font-family: var(--font-body);
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .toolbar-actions button:hover { background: var(--andritz-blue); color: #ffffff; }
+
+    @media print {
+      body { background: #ffffff; padding: 1rem; }
+      .toolbar { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container" id="report-container">
+    <!-- Header -->
+    <div class="header">
+      <div class="header-row">
+        <svg class="signet" viewBox="0 0 56.7 42.6" aria-label="ANDRITZ">
+          <polygon fill="#0075BE" points="21,0 0,42.6 37.1,42.6 31.7,30.1 21.6,30.1 28.2,15.6 40.5,42.6 56.7,42.6 35.5,0"/>
+        </svg>
+        <div class="pulse-dot"></div>
+        <h1>Shared Agent Memory — Hindsight on Azure</h1>
+        <div class="toolbar">
+          <div class="toolbar-actions">
+            <button onclick="copyAsImage(this)">📋 Copy</button>
+            <button onclick="downloadPNG(this)">🖼️ PNG</button>
+            <button onclick="downloadPDF(this)">📄 PDF</button>
+          </div>
+          <button class="toolbar-toggle" onclick="this.parentElement.classList.toggle('expanded')" title="Export options" aria-label="Export options">⋯</button>
+        </div>
+      </div>
+      <p class="subtitle">One memory service for the cross-site team · Azure Container Apps + PostgreSQL Flexible Server + Azure AI Foundry · Draft v1 · September 5, 2026</p>
+    </div>
+
+    <!-- Main Diagram -->
+    <div class="diagram-container">
+      <svg class="diagram" viewBox="0 0 1160 770" font-family="Barlow, Arial, sans-serif">
+        <defs>
+          <marker id="arrowBlue" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#0075be"/>
+          </marker>
+          <marker id="arrowDarkBlue" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#003a70"/>
+          </marker>
+          <marker id="arrowGreen" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#89a429"/>
+          </marker>
+          <marker id="arrowOrange" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#ee7203"/>
+          </marker>
+          <marker id="arrowGray" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#82868d"/>
+          </marker>
+          <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#e6e7e7" stroke-width="0.5"/>
+          </pattern>
+        </defs>
+
+        <!-- Background grid -->
+        <rect width="100%" height="100%" fill="url(#grid)"/>
+
+        <!-- ===================== BOUNDARIES (background layer) ===================== -->
+
+        <!-- Team clients group -->
+        <rect x="20" y="60" width="180" height="420" rx="8" fill="none" stroke="#9d9e9f" stroke-width="1" stroke-dasharray="4,4"/>
+        <text x="32" y="80" fill="#585d67" font-size="10" font-weight="700" font-family="Barlow Condensed, Arial Narrow, sans-serif" letter-spacing="0.06em">TEAM CLIENTS — ANY SITE, ANY HOST</text>
+
+        <!-- Azure boundary -->
+        <rect x="390" y="40" width="750" height="620" rx="8" fill="none" stroke="#003a70" stroke-width="1.2" stroke-dasharray="8,4"/>
+        <text x="404" y="62" fill="#003a70" font-size="11" font-weight="700" font-family="Barlow Condensed, Arial Narrow, sans-serif" letter-spacing="0.06em">MICROSOFT AZURE — WEST EUROPE · RG-WEU-HINDSIGHT-DEV</text>
+
+        <!-- ACA environment sub-boundary -->
+        <rect x="410" y="80" width="340" height="280" rx="8" fill="none" stroke="#7fbade" stroke-width="1.2"/>
+        <text x="424" y="100" fill="#0075be" font-size="10" font-weight="700" font-family="Barlow Condensed, Arial Narrow, sans-serif" letter-spacing="0.06em">AZURE CONTAINER APPS ENVIRONMENT (VNET)</text>
+
+        <!-- Foundry sub-boundary -->
+        <rect x="790" y="300" width="330" height="340" rx="8" fill="none" stroke="#89a429" stroke-width="1.2" stroke-dasharray="4,4"/>
+        <text x="804" y="322" fill="#4e5530" font-size="10" font-weight="700" font-family="Barlow Condensed, Arial Narrow, sans-serif" letter-spacing="0.06em">AZURE AI FOUNDRY (AAIH RESOURCE)</text>
+
+        <!-- ===================== ARROWS (behind component boxes) ===================== -->
+
+        <!-- Client stubs into collector rail -->
+        <line x1="185" y1="132" x2="210" y2="132" stroke="#7fbade" stroke-width="1.5"/>
+        <line x1="185" y1="236" x2="210" y2="236" stroke="#7fbade" stroke-width="1.5"/>
+        <line x1="185" y1="336" x2="210" y2="336" stroke="#7fbade" stroke-width="1.5"/>
+        <line x1="185" y1="432" x2="210" y2="432" stroke="#7fbade" stroke-width="1.5"/>
+        <line x1="210" y1="132" x2="210" y2="432" stroke="#7fbade" stroke-width="1.5"/>
+
+        <!-- Phase 1: clients -> API -->
+        <line x1="210" y1="170" x2="426" y2="176" stroke="#0075be" stroke-width="2" marker-end="url(#arrowBlue)"/>
+        <text x="312" y="158" fill="#003a70" font-size="9" font-weight="600" text-anchor="middle">HTTPS · Bearer (tenant key) · MCP / REST</text>
+
+        <!-- Phase 2 (planned): clients -> APIM -> API -->
+        <line x1="210" y1="250" x2="248" y2="250" stroke="#82868d" stroke-width="1.5" stroke-dasharray="5,5" marker-end="url(#arrowGray)"/>
+        <line x1="370" y1="250" x2="426" y2="210" stroke="#82868d" stroke-width="1.5" stroke-dasharray="5,5" marker-end="url(#arrowGray)"/>
+
+        <!-- Browser -> Control Plane -->
+        <line x1="210" y1="432" x2="426" y2="300" stroke="#0075be" stroke-width="1.5" marker-end="url(#arrowBlue)"/>
+        <text x="330" y="392" fill="#585d67" font-size="8" text-anchor="middle">Web UI (Entra ID)</text>
+
+        <!-- Control Plane -> API (server-side, internal) -->
+        <line x1="575" y1="258" x2="575" y2="224" stroke="#0075be" stroke-width="1.5" marker-end="url(#arrowBlue)"/>
+        <text x="588" y="245" fill="#585d67" font-size="8">internal FQDN + key</text>
+
+        <!-- ACA environment -> PostgreSQL -->
+        <line x1="580" y1="362" x2="580" y2="496" stroke="#003a70" stroke-width="2" marker-end="url(#arrowDarkBlue)"/>
+        <text x="592" y="424" fill="#003a70" font-size="9" font-weight="600">asyncpg · TLS</text>
+        <text x="592" y="438" fill="#585d67" font-size="8">private endpoint</text>
+
+        <!-- API -> Foundry model calls -->
+        <line x1="722" y1="150" x2="806" y2="370" stroke="#89a429" stroke-width="1.5" marker-end="url(#arrowGreen)"/>
+        <line x1="722" y1="170" x2="806" y2="474" stroke="#89a429" stroke-width="1.5" marker-end="url(#arrowGreen)"/>
+        <line x1="722" y1="190" x2="806" y2="582" stroke="#89a429" stroke-width="1.5" marker-end="url(#arrowGreen)"/>
+        <text x="762" y="282" fill="#4e5530" font-size="8" text-anchor="middle">extract · embed · rerank</text>
+
+        <!-- Key Vault -> API (secrets) -->
+        <line x1="788" y1="118" x2="726" y2="132" stroke="#ee7203" stroke-width="1.5" stroke-dasharray="4,4" marker-end="url(#arrowOrange)"/>
+        <text x="757" y="104" fill="#ee7203" font-size="7" text-anchor="middle">secrets via UAMI</text>
+
+        <!-- ACA environment -> Log Analytics (telemetry) -->
+        <line x1="752" y1="224" x2="786" y2="221" stroke="#82868d" stroke-width="1.5" stroke-dasharray="4,4" marker-end="url(#arrowGray)"/>
+
+        <!-- ===================== COMPONENTS ===================== -->
+
+        <!-- Clients -->
+        <rect x="35" y="100" width="150" height="64" rx="4" fill="#bfdcef" stroke="#0075be" stroke-width="1.5"/>
+        <text x="110" y="122" fill="#003a70" font-size="11" font-weight="700" text-anchor="middle" font-family="Barlow Condensed, Arial Narrow, sans-serif" letter-spacing="0.05em">CLAUDE CODE</text>
+        <text x="110" y="138" fill="#585d67" font-size="9" text-anchor="middle">MCP · streamable HTTP</text>
+        <text x="110" y="152" fill="#585d67" font-size="8" text-anchor="middle">per-bank endpoint</text>
+
+        <rect x="35" y="204" width="150" height="64" rx="4" fill="#bfdcef" stroke="#0075be" stroke-width="1.5"/>
+        <text x="110" y="226" fill="#003a70" font-size="11" font-weight="700" text-anchor="middle" font-family="Barlow Condensed, Arial Narrow, sans-serif" letter-spacing="0.05em">HINDSIGHT CLI</text>
+        <text x="110" y="242" fill="#585d67" font-size="9" text-anchor="middle">~/.hindsight/config</text>
+        <text x="110" y="256" fill="#585d67" font-size="8" text-anchor="middle">hindsight-self-hosted skill</text>
+
+        <rect x="35" y="308" width="150" height="56" rx="4" fill="#bfdcef" stroke="#0075be" stroke-width="1.5"/>
+        <text x="110" y="330" fill="#003a70" font-size="11" font-weight="700" text-anchor="middle" font-family="Barlow Condensed, Arial Narrow, sans-serif" letter-spacing="0.05em">SDKS</text>
+        <text x="110" y="347" fill="#585d67" font-size="9" text-anchor="middle">Python · Node.js · Go</text>
+
+        <rect x="35" y="404" width="150" height="56" rx="4" fill="#bfdcef" stroke="#0075be" stroke-width="1.5"/>
+        <text x="110" y="426" fill="#003a70" font-size="11" font-weight="700" text-anchor="middle" font-family="Barlow Condensed, Arial Narrow, sans-serif" letter-spacing="0.05em">BROWSER</text>
+        <text x="110" y="443" fill="#585d67" font-size="9" text-anchor="middle">Control Plane UI</text>
+
+        <!-- APIM (Phase 2, planned) -->
+        <rect x="250" y="218" width="120" height="64" rx="4" fill="#fbf2bf" stroke="#82868d" stroke-width="1.5" stroke-dasharray="5,5"/>
+        <text x="310" y="238" fill="#003a70" font-size="11" font-weight="700" text-anchor="middle" font-family="Barlow Condensed, Arial Narrow, sans-serif" letter-spacing="0.05em">APIM</text>
+        <text x="310" y="253" fill="#585d67" font-size="8" text-anchor="middle">per-user keys · Entra JWT</text>
+        <text x="310" y="272" fill="#82868d" font-size="7" font-weight="600" text-anchor="middle">PHASE 2 — PLANNED</text>
+
+        <!-- Hindsight API app -->
+        <rect x="430" y="120" width="290" height="100" rx="4" fill="#bfdcef" stroke="#0075be" stroke-width="1.5"/>
+        <text x="575" y="140" fill="#003a70" font-size="12" font-weight="700" text-anchor="middle" font-family="Barlow Condensed, Arial Narrow, sans-serif" letter-spacing="0.05em">HINDSIGHT API</text>
+        <text x="575" y="156" fill="#585d67" font-size="9" text-anchor="middle">ca-weu-hindsight-api-dev · slim image · 1 vCPU / 2 GiB</text>
+        <text x="575" y="171" fill="#585d67" font-size="9" text-anchor="middle">REST /v1 · MCP /mcp/{bank_id}/ · retain · recall · reflect</text>
+        <text x="575" y="186" fill="#585d67" font-size="8" text-anchor="middle">internal worker · stable HINDSIGHT_API_WORKER_ID</text>
+        <text x="575" y="206" fill="#0075be" font-size="7" text-anchor="middle" font-family="ui-monospace, Menlo, monospace">ghcr.io/vectorize-io/hindsight-api:&lt;ver&gt;-slim</text>
+
+        <!-- Control Plane app -->
+        <rect x="430" y="260" width="290" height="70" rx="4" fill="#bfdcef" stroke="#0075be" stroke-width="1.5"/>
+        <text x="575" y="282" fill="#003a70" font-size="11" font-weight="700" text-anchor="middle" font-family="Barlow Condensed, Arial Narrow, sans-serif" letter-spacing="0.05em">CONTROL PLANE (WEB UI)</text>
+        <text x="575" y="298" fill="#585d67" font-size="9" text-anchor="middle">ca-weu-hindsight-cp-dev · scale 0–1</text>
+        <text x="575" y="314" fill="#585d67" font-size="8" text-anchor="middle">Entra ID (built-in auth) + access key</text>
+
+        <!-- PostgreSQL -->
+        <rect x="410" y="500" width="340" height="130" rx="4" fill="#bfcedb" stroke="#003a70" stroke-width="1.5"/>
+        <text x="580" y="524" fill="#003a70" font-size="12" font-weight="700" text-anchor="middle" font-family="Barlow Condensed, Arial Narrow, sans-serif" letter-spacing="0.05em">AZURE DATABASE FOR POSTGRESQL</text>
+        <text x="580" y="541" fill="#585d67" font-size="9" text-anchor="middle">psql-weu-hindsight-dev · Flexible Server · PG 17</text>
+        <text x="580" y="558" fill="#003a70" font-size="9" font-weight="600" text-anchor="middle">vector 0.8.2 — HNSW (active)</text>
+        <text x="580" y="574" fill="#003a70" font-size="9" font-weight="600" text-anchor="middle">pg_diskann 0.6.5 — DiskANN (enabled, scale path)</text>
+        <text x="580" y="590" fill="#585d67" font-size="8" text-anchor="middle">private access · sslmode=require · PITR 14 d · B2ms → D2ds_v5</text>
+        <text x="580" y="612" fill="#585d67" font-size="7" text-anchor="middle">single source of truth: vectors · BM25 full-text · graph (CTEs) · JSONB</text>
+
+        <!-- Key Vault -->
+        <rect x="790" y="90" width="330" height="60" rx="4" fill="#fddfc4" stroke="#ee7203" stroke-width="1.5"/>
+        <text x="955" y="112" fill="#003a70" font-size="11" font-weight="700" text-anchor="middle" font-family="Barlow Condensed, Arial Narrow, sans-serif" letter-spacing="0.05em">KEY VAULT + MANAGED IDENTITY</text>
+        <text x="955" y="128" fill="#585d67" font-size="9" text-anchor="middle">kv-weu-hindsight-dev · id-weu-hindsight-dev (UAMI)</text>
+        <text x="955" y="142" fill="#585d67" font-size="8" text-anchor="middle">model keys · DB connection string · tenant API key</text>
+
+        <!-- Log Analytics -->
+        <rect x="790" y="190" width="330" height="60" rx="4" fill="#e6e7e7" stroke="#585d67" stroke-width="1.5"/>
+        <text x="955" y="212" fill="#003a70" font-size="11" font-weight="700" text-anchor="middle" font-family="Barlow Condensed, Arial Narrow, sans-serif" letter-spacing="0.05em">LOG ANALYTICS (+ APP INSIGHTS OPT.)</text>
+        <text x="955" y="228" fill="#585d67" font-size="9" text-anchor="middle">structured JSON logs · Prometheus /metrics</text>
+        <text x="955" y="242" fill="#585d67" font-size="8" text-anchor="middle">optional OTel traces (HINDSIGHT_API_OTEL_*)</text>
+
+        <!-- Foundry models -->
+        <rect x="810" y="340" width="290" height="64" rx="4" fill="#e1e8c9" stroke="#89a429" stroke-width="1.5"/>
+        <text x="955" y="362" fill="#4e5530" font-size="11" font-weight="700" text-anchor="middle" font-family="Barlow Condensed, Arial Narrow, sans-serif" letter-spacing="0.05em">GPT-5-MINI (AZURE OPENAI)</text>
+        <text x="955" y="378" fill="#585d67" font-size="9" text-anchor="middle">fact extraction · reflect · consolidation</text>
+        <text x="955" y="392" fill="#585d67" font-size="8" text-anchor="middle">Data Zone Standard EU · /openai/v1</text>
+
+        <rect x="810" y="444" width="290" height="64" rx="4" fill="#e1e8c9" stroke="#89a429" stroke-width="1.5"/>
+        <text x="955" y="466" fill="#4e5530" font-size="11" font-weight="700" text-anchor="middle" font-family="Barlow Condensed, Arial Narrow, sans-serif" letter-spacing="0.05em">TEXT-EMBEDDING-3-SMALL</text>
+        <text x="955" y="482" fill="#585d67" font-size="9" text-anchor="middle">1536 dims — locked before first retain</text>
+        <text x="955" y="496" fill="#585d67" font-size="8" text-anchor="middle">provider: openai · HNSW- and DiskANN-compatible</text>
+
+        <rect x="810" y="548" width="290" height="72" rx="4" fill="#e1e8c9" stroke="#89a429" stroke-width="1.5"/>
+        <text x="955" y="570" fill="#4e5530" font-size="11" font-weight="700" text-anchor="middle" font-family="Barlow Condensed, Arial Narrow, sans-serif" letter-spacing="0.05em">COHERE-RERANK-V4.0-FAST</text>
+        <text x="955" y="586" fill="#585d67" font-size="9" text-anchor="middle">Cohere-compatible /v2/rerank invoke URL</text>
+        <text x="955" y="600" fill="#585d67" font-size="8" text-anchor="middle">Data Zone Standard EU (westeurope)</text>
+        <text x="955" y="613" fill="#ee7203" font-size="7" font-weight="600" text-anchor="middle">failover member 1: rrf — recall fails open</text>
+
+        <!-- ===================== LEGEND (outside all boundaries) ===================== -->
+        <text x="24" y="694" fill="#003a70" font-size="10" font-weight="700" font-family="Barlow Condensed, Arial Narrow, sans-serif" letter-spacing="0.06em">LEGEND</text>
+
+        <rect x="90" y="686" width="16" height="10" rx="2" fill="#bfdcef" stroke="#0075be" stroke-width="1"/>
+        <text x="112" y="694" fill="#585d67" font-size="8">Clients &amp; runtime (ACA)</text>
+
+        <rect x="240" y="686" width="16" height="10" rx="2" fill="#bfcedb" stroke="#003a70" stroke-width="1"/>
+        <text x="262" y="694" fill="#585d67" font-size="8">Data (PostgreSQL)</text>
+
+        <rect x="370" y="686" width="16" height="10" rx="2" fill="#e1e8c9" stroke="#89a429" stroke-width="1"/>
+        <text x="392" y="694" fill="#585d67" font-size="8">AI models (Foundry)</text>
+
+        <rect x="500" y="686" width="16" height="10" rx="2" fill="#fddfc4" stroke="#ee7203" stroke-width="1"/>
+        <text x="522" y="694" fill="#585d67" font-size="8">Security &amp; secrets</text>
+
+        <rect x="630" y="686" width="16" height="10" rx="2" fill="#e6e7e7" stroke="#585d67" stroke-width="1"/>
+        <text x="652" y="694" fill="#585d67" font-size="8">Observability</text>
+
+        <rect x="90" y="712" width="16" height="10" rx="2" fill="#fbf2bf" stroke="#82868d" stroke-width="1" stroke-dasharray="3,3"/>
+        <text x="112" y="720" fill="#585d67" font-size="8">Planned — Phase 2 (APIM)</text>
+
+        <rect x="240" y="712" width="16" height="10" rx="2" fill="none" stroke="#003a70" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="262" y="720" fill="#585d67" font-size="8">Azure boundary (RG / VNet)</text>
+
+        <line x1="370" y1="717" x2="386" y2="717" stroke="#ee7203" stroke-width="1.5" stroke-dasharray="3,3"/>
+        <text x="392" y="720" fill="#585d67" font-size="8">Secret flow (Key Vault refs)</text>
+
+        <line x1="500" y1="717" x2="516" y2="717" stroke="#82868d" stroke-width="1.5" stroke-dasharray="3,3"/>
+        <text x="522" y="720" fill="#585d67" font-size="8">Telemetry</text>
+
+        <line x1="630" y1="717" x2="646" y2="717" stroke="#89a429" stroke-width="1.5"/>
+        <text x="652" y="720" fill="#585d67" font-size="8">Model calls (HTTPS)</text>
+      </svg>
+    </div>
+
+    <!-- Info Cards -->
+    <div class="cards">
+      <div class="card data">
+        <div class="card-header">
+          <div class="card-dot darkblue"></div>
+          <h3>Data Layer</h3>
+        </div>
+        <ul>
+          <li>• PostgreSQL Flexible Server PG 17 — the single stateful component</li>
+          <li>• <code>vector</code> 0.8.2 (HNSW) active; iterative index scans supported (≥ 0.8.0)</li>
+          <li>• <code>pg_diskann</code> 0.6.5 allow-listed from day 1 — scale switch is config + re-index</li>
+          <li>• Private access, <code>sslmode=require</code>, PITR 14 days</li>
+          <li>• Start <code>B2ms</code> / 32 GiB autogrow — grow to <code>D2ds_v5</code> when latency pinches</li>
+        </ul>
+      </div>
+
+      <div class="card models">
+        <div class="card-header">
+          <div class="card-dot green"></div>
+          <h3>Models — AI Foundry</h3>
+        </div>
+        <ul>
+          <li>• <code>gpt-5-mini</code> — extraction, reflect, consolidation (Data Zone EU)</li>
+          <li>• <code>text-embedding-3-small</code> — 1536 dims, dimension-locked at first retain</li>
+          <li>• <code>Cohere-rerank-v4.0-fast</code> — /v2/rerank, failover member: <code>rrf</code></li>
+          <li>• Base URL gotcha: <code>https://&lt;res&gt;.openai.azure.com/openai/v1</code></li>
+          <li>• If key auth is disabled by policy: route via APIM AI Gateway (managed identity)</li>
+        </ul>
+      </div>
+
+      <div class="card security">
+        <div class="card-header">
+          <div class="card-dot orange"></div>
+          <h3>Access &amp; Security</h3>
+        </div>
+        <ul>
+          <li>• Phase 1: shared bearer key (<code>ApiKeyTenantExtension</code>), distributed via 1Password</li>
+          <li>• Phase 2: APIM — per-user subscriptions, Entra ID JWT, per-caller passthrough header</li>
+          <li>• Key Vault + user-assigned managed identity — no secrets in app config</li>
+          <li>• Control Plane behind Entra ID (ACA built-in auth) + access key</li>
+          <li>• Shared memory language forced to English (<code>LLM_OUTPUT_LANGUAGE</code>)</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <p class="footer">
+      Hindsight on Azure — Target Architecture · Draft v1 · September 5, 2026 · Solution Design &amp; Consulting · ©ANDRITZ
+    </p>
+  </div>
+
+  <script>
+    async function copyAsImage(btn) {
+      const orig = btn.textContent;
+      try {
+        const el = document.getElementById('report-container');
+        const r = el.getBoundingClientRect();
+        const pad = 32;
+        const canvas = await html2canvas(document.body, { backgroundColor: '#ffffff', scale: 2, useCORS: true, ignoreElements: (e) => e.classList && e.classList.contains('toolbar'), x: r.left + window.scrollX - pad, y: r.top + window.scrollY - pad, width: r.width + pad * 2, height: r.height + pad * 2 });
+        const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        btn.textContent = '✓ Copied!';
+      } catch (e) {
+        btn.textContent = '✗ Failed';
+      }
+      setTimeout(() => btn.textContent = orig, 2000);
+    }
+
+    async function downloadPNG(btn) {
+      const orig = btn.textContent;
+      btn.textContent = '⏳ ...';
+      try {
+        const el = document.getElementById('report-container');
+        const r = el.getBoundingClientRect();
+        const pad = 32;
+        const canvas = await html2canvas(document.body, { backgroundColor: '#ffffff', scale: 2, useCORS: true, ignoreElements: (e) => e.classList && e.classList.contains('toolbar'), x: r.left + window.scrollX - pad, y: r.top + window.scrollY - pad, width: r.width + pad * 2, height: r.height + pad * 2 });
+        const link = document.createElement('a');
+        link.download = 'hindsight-on-azure-architecture.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+        btn.textContent = '✓ Done!';
+      } catch (e) {
+        btn.textContent = '✗ Failed';
+      }
+      setTimeout(() => btn.textContent = orig, 2000);
+    }
+
+    async function downloadPDF(btn) {
+      const orig = btn.textContent;
+      btn.textContent = '⏳ ...';
+      try {
+        const el = document.getElementById('report-container');
+        const r = el.getBoundingClientRect();
+        const pad = 32;
+        const canvas = await html2canvas(document.body, { backgroundColor: '#ffffff', scale: 2, useCORS: true, ignoreElements: (e) => e.classList && e.classList.contains('toolbar'), x: r.left + window.scrollX - pad, y: r.top + window.scrollY - pad, width: r.width + pad * 2, height: r.height + pad * 2 });
+        const imgData = canvas.toDataURL('image/png');
+        const { jsPDF } = window.jspdf;
+        const orientation = canvas.width > canvas.height ? 'landscape' : 'portrait';
+        const pdf = new jsPDF({ orientation, unit: 'px', format: [canvas.width, canvas.height], hotfixes: ['px_scaling'] });
+        pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
+        pdf.save('hindsight-on-azure-architecture.pdf');
+        btn.textContent = '✓ Done!';
+      } catch (e) {
+        btn.textContent = '✗ Failed';
+      }
+      setTimeout(() => btn.textContent = orig, 2000);
+    }
+  </script>
+</body>
+</html>
