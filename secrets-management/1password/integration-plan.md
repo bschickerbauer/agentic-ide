@@ -3,8 +3,8 @@
 **Status:** Working on the first host (macOS) as of 2026-09-07. Phases 0 to 2 are done and verified
 for the Foundry key: the key was rotated into 1Password, the previously exposed plaintext key is
 invalid (verified: HTTP 401), loader installed, legacy plaintext files removed, Claude Code and the
-Hindsight daemon restarted on the 1Password-loaded key and verified end to end. Pending: migrate the
-GitHub PAT. See [Execution log](#11-execution-log).
+Hindsight daemon restarted on the 1Password-loaded key and verified end to end. GitHub PAT migration
+deferred by decision (2026-09-07). See [Execution log](#11-execution-log).
 
 **Host assumptions:** Written from an inventory of a macOS host (Apple Silicon, zsh, oh-my-zsh
 with Powerlevel10k, 1Password desktop app + CLI 2.39). The design is OS-agnostic; WSL2 notes are
@@ -352,5 +352,6 @@ Run `claude mcp list`; the GitHub server must still be connected.
 **Still open after this run:**
 
 1. Foundry keys: nothing. key1 is live in 1Password, key2 is an unused spare.
-2. GitHub PAT: create item `github-pat-claude-mcp`, add the `GITHUB_MCP_TOKEN` line, rewrite the
-   MCP header (Phase 2, step 2), rotate the PAT.
+2. GitHub PAT: **deferred by decision on 2026-09-07.** It stays as a literal header in
+   `~/.claude.json` for now. When picked up: create item `github-pat-claude-mcp`, add the
+   `GITHUB_MCP_TOKEN` line, rewrite the MCP header (Phase 2, step 2), rotate the PAT.

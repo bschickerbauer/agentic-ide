@@ -27,6 +27,6 @@ start. Non-secret configuration stays in a plain file; nothing secret is written
   desktop-app integration). Same day: Foundry key rotated (key2) into the existing 1Password item
   in vault `ANDRITZ Agents`, loader installed on the first host, legacy plaintext files removed,
   Claude Code and the Hindsight daemon restarted on the 1Password-loaded key; Hindsight verified
-  end to end; the old plaintext key is invalid. **Working in daily use on the first host.** Open:
-  migrate the GitHub PAT (see plan, Execution log). Next: WSL2 walkthrough on a second host; bash
-  port of the loader.
+  end to end; the old plaintext key is invalid. **Working in daily use on the first host.** GitHub
+  PAT migration deferred by decision; it stays as is for now (see plan, Execution log). Next: WSL2
+  walkthrough on a second host; bash port of the loader.
