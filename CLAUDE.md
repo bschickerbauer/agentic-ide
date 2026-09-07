@@ -14,6 +14,13 @@ This is not a single product with one build. It grows as a collection of indepen
 - Content serves a distributed team: never assume a specific machine. State OS assumptions explicitly (team members work on macOS and Windows + WSL2); anything localhost-only must say so.
 - Keep this file updated as topics and tooling land.
 
+## Topics and their tooling
+
+| Folder | Tooling / commands |
+|--------|--------------------|
+| `agent-memory/` | Documentation only (deployment plan, architecture HTML). No build. |
+| `secrets-management/` | 1Password-backed env secrets. Local install: `bash secrets-management/1password/install.sh` (macOS/WSL2, needs `op` + zsh). Syntax checks: `zsh -n secrets-management/1password/zsh/agentic-secrets.zsh`, `bash -n secrets-management/1password/install.sh`. Never commit resolved secret values; `templates/secrets.env` holds `op://` references only. No underscore-prefixed function names in the loader (Claude Code's shell snapshot drops them). |
+
 ## Ground rules (non-negotiable)
 
 - **Language:** All outputs and artifacts (docs, READMEs, HTML reports, diagrams, decks) are written in English (en-US) with US date/decimal formats — even when the conversation is in German. A German version only on explicit request, as an additional variant.
