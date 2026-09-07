@@ -9,6 +9,7 @@ Example topics: agent harnesses, agent memory solutions, IDE/editor configuratio
 | Folder | Topic |
 |--------|-------|
 | [`agent-memory/`](agent-memory/) | Shared agent memory — Hindsight on Azure (deployment plan + architecture) |
+| [`secrets-management/`](secrets-management/) | Secrets for agentic tooling — 1Password-backed environment variables (plan, zsh loader, templates, installer) |
 
 ## Conventions
 
