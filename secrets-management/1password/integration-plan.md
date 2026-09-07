@@ -3,8 +3,8 @@
 **Status:** Working on the first host (macOS) as of 2026-09-07. Phases 0 to 2 are done and verified
 for the Foundry key: the key was rotated into 1Password, the previously exposed plaintext key is
 invalid (verified: HTTP 401), loader installed, legacy plaintext files removed, Claude Code and the
-Hindsight daemon restarted on the 1Password-loaded key and verified end to end. Pending: migrate the
-GitHub PAT. See [Execution log](#11-execution-log).
+Hindsight daemon restarted on the 1Password-loaded key and verified end to end. GitHub PAT migration
+deferred by decision (2026-09-07). See [Execution log](#11-execution-log).
 
 **Host assumptions:** Written from an inventory of a macOS host (Apple Silicon, zsh, oh-my-zsh
 with Powerlevel10k, 1Password desktop app + CLI 2.39). The design is OS-agnostic; WSL2 notes are
@@ -244,9 +244,17 @@ Run `claude mcp list`; the GitHub server must still be connected.
 - **Nothing secret at rest.** The reference file is shareable. The only plaintext copies after
   Phase 2 are process environments and the Claude Code shell snapshots under
   `~/.claude/shell-snapshots/` (they capture functions, not variable values).
-- **Prompt cadence** is governed by the 1Password app (auto-lock, Touch ID). Expect one prompt per
-  terminal application session and one after each lock. Eager mode multiplies visible prompts
-  when many panes open at once (Orca, tmux); lazy mode does not.
+- **Prompt cadence** is governed by the 1Password app and cannot be tuned. Verified 2026-09-07
+  against the app-integration security docs and on the first host: one authorization per terminal
+  session (macOS/Linux: keyed on the TTY plus the session start time), valid for 10 minutes of
+  inactivity and refreshed on every `op` call, hard limit 12 hours, revoked when the app locks.
+  No app setting auto-approves CLI requests or lengthens the window; only auto-lock (240 min on
+  the first host) has an effect. Consequence for agents: Claude Code's Bash tool runs each
+  command in a fresh shell without a TTY, so every `op` call inside a session prompts again
+  (measured: Touch ID in shell A, `account is not signed in` in the next shell). Never call `op`
+  from inside an agent session; the lazy wrapper resolves once in the terminal and the session
+  inherits the variables. Eager mode multiplies visible prompts when many panes open at once
+  (Orca, tmux); lazy mode does not.
 - **Non-interactive contexts** (launchd, cron, CI) cannot use the app integration. Use a
   1Password Service Account (`OP_SERVICE_ACCOUNT_TOKEN`) scoped to the `ANDRITZ Agents` vault for those,
   and store that token in the OS keychain. Out of scope for this plan.
@@ -267,6 +275,8 @@ Run `claude mcp list`; the GitHub server must still be connected.
 | **direnv / envchain / macOS Keychain cache** | Extra tool or a second secret store to manage; keychain caching reintroduces at-rest copies. Not used. |
 | **1Password shell plugins** (`op plugin init gh`, `claude`) | Good for CLIs that read one credential (gh, aws). Here `gh` already uses the keyring and Claude Code needs several variables plus Foundry-specific ones. Not used for now. |
 | **Eager mode as default** | Simplest mental model, but prompts and `op` latency on every shell in a multiplexer-heavy setup. Opt-in only. |
+| **Service Account token on the workstation** (`OP_SERVICE_ACCOUNT_TOKEN`, prompt-free) | Removes every prompt, but the token is a bearer secret at rest (Keychain at best) with standing read access to the vault, which is exactly what the biometric integration was chosen to avoid. Reserve for launchd/CI. If ever used interactively, scope it to a dedicated vault holding only the agent items. |
+| **Manual sign-in session** (`eval "$(op signin)"` with the app integration off) | Session token in the environment: 30 minutes idle, inherited by child processes, shareable across panes. But account password instead of Touch ID, and the app integration must be turned off. Not better than lazy mode. |
 
 ## 9. Team notes (macOS + WSL2)
 
@@ -328,6 +338,17 @@ Run `claude mcp list`; the GitHub server must still be connected.
   returns only `~/.config/agentic/secrets.env`. `~/.codex/auth.json` was not recreated.
 - Still literal: the GitHub PAT, twice in `~/.claude.json` (user scope and the `/Users/<user>`
   project scope).
+
+**2026-09-07, prompt cadence check (same host):**
+
+- Question: can CLI access be auto-approved instead of Touch ID on every read? Answer: no. The app
+  integration has no auto-approve setting; the authorization window (10 min idle, 12 h max, per
+  terminal session) is fixed. Measured inside Claude Code's Bash tool: `op signin` in one shell
+  prompted once (3.2 s), follow-up `op` calls in the same shell ran without a prompt (0.1 to 1.3 s),
+  the next Bash tool call (new shell, no TTY) reported `account is not signed in`. In a normal
+  terminal tab the authorization is shared for the whole tab. Recorded in sections 7 and 8.
+- Decision (owner): keep the setup as is, no Service Account on the workstation. Wait for official
+  1Password support for agent workflows and terminal multiplexers (community request CFP-19201).
 - **Key audit** (SHA-256 prefixes compared, no value printed): the 1Password item holds the value
   Azure reports as **key1**; this Claude Code session and the Hindsight daemon run on it (live
   request: HTTP 200). The previously exposed plaintext key, still present in older Claude Code
@@ -352,5 +373,6 @@ Run `claude mcp list`; the GitHub server must still be connected.
 **Still open after this run:**
 
 1. Foundry keys: nothing. key1 is live in 1Password, key2 is an unused spare.
-2. GitHub PAT: create item `github-pat-claude-mcp`, add the `GITHUB_MCP_TOKEN` line, rewrite the
-   MCP header (Phase 2, step 2), rotate the PAT.
+2. GitHub PAT: **deferred by decision on 2026-09-07.** It stays as a literal header in
+   `~/.claude.json` for now. When picked up: create item `github-pat-claude-mcp`, add the
+   `GITHUB_MCP_TOKEN` line, rewrite the MCP header (Phase 2, step 2), rotate the PAT.
