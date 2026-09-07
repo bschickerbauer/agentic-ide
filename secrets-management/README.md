@@ -28,5 +28,9 @@ start. Non-secret configuration stays in a plain file; nothing secret is written
   in vault `ANDRITZ Agents`, loader installed on the first host, legacy plaintext files removed,
   Claude Code and the Hindsight daemon restarted on the 1Password-loaded key; Hindsight verified
   end to end; the old plaintext key is invalid. **Working in daily use on the first host.** GitHub
-  PAT migration deferred by decision; it stays as is for now (see plan, Execution log). Next: WSL2
-  walkthrough on a second host; bash port of the loader.
+  PAT migration deferred by decision; it stays as is for now (see plan, Execution log). Prompt
+  cadence verified: one Touch ID per terminal tab (10 min idle window, 12 h max, reset on app lock),
+  no auto-approve setting exists; `op` inside an agent's Bash tool prompts on every call, so keep
+  secrets resolved in the terminal and inherited. Decision: keep the setup as is and wait for
+  official 1Password support for agent workflows and terminal multiplexers (plan, sections 7 and 11).
+  Next: WSL2 walkthrough on a second host; bash port of the loader.
