@@ -233,6 +233,7 @@ Run `claude mcp list`; the GitHub server must still be connected.
 - [ ] `claude mcp list` shows the GitHub server connected and no missing-variable warning.
 - [ ] `secrets-run env | grep -c FOUNDRY_API_KEY` prints `1`; `env | grep -c FOUNDRY_API_KEY` in the same shell prints `0` (before any `secrets-load`).
 - [x] Inside a Claude Code session, the Bash tool sees the variables (inherited) and does not trigger a new prompt.
+- [ ] With the 1Password app quit, a wrapped command prints `the 1Password desktop app is not running` and still starts; after `open -a 1Password` and the CLI prompt, `secrets-load` succeeds. (Graceful start observed 2026-09-07 with `codex`; the new hint is verified against the recorded `op` error text with a simulated `op`; a rerun with the app really quit is pending.)
 - [x] `grep -rl 'ANTHROPIC_FOUNDRY_API_KEY=' ~/.config ~/.zshrc ~/.zprofile ~/.hindsight` returns only `secrets.env` (an `op://` reference).
 - [ ] Both secrets rotated; old values invalid. (Foundry: done, the old key answers HTTP 401. PAT: pending.)
 
@@ -258,9 +259,18 @@ Run `claude mcp list`; the GitHub server must still be connected.
 - **Non-interactive contexts** (launchd, cron, CI) cannot use the app integration. Use a
   1Password Service Account (`OP_SERVICE_ACCOUNT_TOKEN`) scoped to the `ANDRITZ Agents` vault for those,
   and store that token in the OS keychain. Out of scope for this plan.
-- **Failure mode is loud but not fatal.** If 1Password is locked or the reference is wrong,
-  `secrets-load` prints one line to stderr and the wrapped command starts without the secret;
-  Claude Code then reports the Foundry credential-chain error, which points straight at the cause.
+- **The desktop app must be running, not just installed.** With the app integration, `op` has no
+  session of its own; it resolves every reference through the running 1Password app. If the app is
+  not running (quit, crashed, or not started after a reboot), `op inject` fails with
+  `error initializing client: connecting to desktop app: 1Password CLI couldn't connect to the
+  1Password desktop app` and suggests updating the app, which is misleading. `secrets-load`
+  recognizes this error and names the real cause; the wrapped command starts without secrets. Way
+  out: start the app (macOS: `open -a 1Password`), approve the CLI authorization prompt the app
+  shows on the next `op` call, then rerun the command or `secrets-load`. Keep the app as a login
+  item so this does not recur after reboots. Observed 2026-09-07 with the `codex` wrapper.
+- **Failure mode is loud but not fatal.** If 1Password is locked or not running, or the reference
+  is wrong, `secrets-load` prints one line to stderr and the wrapped command starts without the
+  secret; Claude Code then reports the Foundry credential-chain error, which points at the cause.
 - **`op run` and TTYs.** `op run` masks secrets by piping the child's output, which breaks
   full-screen TUIs. `secrets-run` therefore passes `--no-masking`; the trade-off is that a leaked
   value in output is not redacted.
@@ -281,11 +291,13 @@ Run `claude mcp list`; the GitHub server must still be connected.
 ## 9. Team notes (macOS + WSL2)
 
 - **macOS:** `brew install 1password-cli`; 1Password app > Settings > Developer > *Integrate with
-  1Password CLI*; Touch ID under Security. Then `install.sh`.
+  1Password CLI*; Touch ID under Security; *Start at login* under General, because the app must be
+  running for `op` to work (section 7). Then `install.sh`.
 - **Windows + WSL2:** install 1Password for Windows and enable the CLI integration there. Inside
   WSL, either install `op` for Linux and follow 1Password's WSL guide (the Linux CLI talks to the
-  Windows app), or alias `op` to `op.exe` from the Windows install. The zsh loader is unchanged.
-  Paths in `config.env` are per user; no host paths are hard-coded.
+  Windows app), or alias `op` to `op.exe` from the Windows install. The Windows app must be running
+  before the first wrapped command in WSL. The zsh loader is unchanged. Paths in `config.env` are
+  per user; no host paths are hard-coded.
 - **bash users:** `secrets-load`/`secrets-run` port to bash with minor edits (`${(f)…}` and
   `${(P)k}` are zsh-only). Not done yet; open item.
 - **Team members without a 1Password account of their own:** the reference file still applies once
@@ -369,6 +381,20 @@ Run `claude mcp list`; the GitHub server must still be connected.
   `uvx hindsight-embed@latest`; first readiness took about 105 s, longer than Claude Code's 30 s MCP
   connect timeout, so the first session after a cold start reports the Hindsight MCP as timed out.
   Later sessions connect immediately.
+
+**2026-09-07, desktop app not running (same host):**
+
+- Found by the owner: with the 1Password desktop app not running, the `codex` wrapper printed
+  `secrets-load: op inject failed (1Password locked, CLI integration off, or bad reference):
+  [ERROR] ... connecting to desktop app: 1Password CLI couldn't connect to the 1Password desktop
+  app. To fix this, update the 1Password app ...` and Codex started without secrets, as designed.
+  Two problems: the loader's hint listed the wrong causes, and op's own advice (update the app) is
+  misleading; the app simply was not running.
+- Fixed in the loader: `secrets-load` matches the connection error and reports "the 1Password
+  desktop app is not running", with `open -a 1Password` on macOS and the note that the app's CLI
+  authorization prompt follows on the next call. Prerequisite recorded in sections 7 and 9 and in
+  the loader header. The loader does not start the app itself: the first `op` call after a start
+  needs the app's authorization prompt anyway, and on WSL2 the app lives on the Windows side.
 
 **Still open after this run:**
 

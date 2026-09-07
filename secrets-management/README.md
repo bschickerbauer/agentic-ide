@@ -33,4 +33,6 @@ start. Non-secret configuration stays in a plain file; nothing secret is written
   no auto-approve setting exists; `op` inside an agent's Bash tool prompts on every call, so keep
   secrets resolved in the terminal and inherited. Decision: keep the setup as is and wait for
   official 1Password support for agent workflows and terminal multiplexers (plan, sections 7 and 11).
-  Next: WSL2 walkthrough on a second host; bash port of the loader.
+  Prerequisite found the same day: the 1Password **desktop app must be running**, `op` has no session
+  of its own; if it is not, the wrapped CLI starts without secrets and `secrets-load` now says so
+  (plan, section 7). Next: WSL2 walkthrough on a second host; bash port of the loader.

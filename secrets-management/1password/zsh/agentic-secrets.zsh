@@ -2,7 +2,10 @@
 #
 # Source this file from ~/.zshrc (install.sh does that). Requires the 1Password CLI (`op`)
 # with desktop-app integration (macOS: 1Password > Settings > Developer > Integrate with
-# 1Password CLI). Works in zsh on macOS and WSL2.
+# 1Password CLI). The desktop app must be RUNNING, not just installed: with the app integration,
+# op resolves every reference through the app and has no session of its own. If the app is not
+# running, op cannot connect, secrets-load fails, and the wrapped command starts without secrets.
+# Works in zsh on macOS and WSL2 (on WSL2 the Windows app is the one that must be running).
 #
 # Files (override by exporting before this file is sourced):
 #   AGENTIC_CONFIG_FILE   non-secret config, sourced at every shell start  (~/.config/agentic/config.env)
@@ -41,10 +44,19 @@ secrets-load() {
   if [[ ! -r $AGENTIC_SECRETS_FILE ]]; then
     print -u2 "secrets-load: $AGENTIC_SECRETS_FILE not found"; return 1
   fi
-  local resolved err
+  local resolved err hint
   if ! resolved="$(op inject -i "$AGENTIC_SECRETS_FILE" 2>"${TMPDIR:-/tmp}/agentic-op-err.$$")"; then
     err=$(head -n1 "${TMPDIR:-/tmp}/agentic-op-err.$$" 2>/dev/null); rm -f "${TMPDIR:-/tmp}/agentic-op-err.$$"
-    print -u2 "secrets-load: op inject failed (1Password locked, CLI integration off, or bad reference)${err:+: $err}"
+    # When the desktop app is not running, op reports "couldn't connect to the 1Password desktop
+    # app" and suggests updating the app, which is misleading. Name the real cause and the way out.
+    if [[ $err == *connect*"desktop app"* ]]; then
+      hint="the 1Password desktop app is not running. Start it"
+      [[ $OSTYPE == darwin* ]] && hint+=" (open -a 1Password)"
+      hint+=", approve the CLI prompt it shows, then rerun the command or secrets-load"
+    else
+      hint="1Password locked, desktop app not running, CLI integration off, or bad reference"
+    fi
+    print -u2 "secrets-load: op inject failed: $hint${err:+ [$err]}"
     return 1
   fi
   rm -f "${TMPDIR:-/tmp}/agentic-op-err.$$"
