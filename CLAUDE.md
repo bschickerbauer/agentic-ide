@@ -19,7 +19,7 @@ This is not a single product with one build. It grows as a collection of indepen
 | Folder | Tooling / commands |
 |--------|--------------------|
 | `agent-memory/` | Documentation only (deployment plan, architecture HTML). No build. |
-| `secrets-management/` | 1Password-backed env secrets. Local install: `bash secrets-management/1password/install.sh` (macOS/WSL2, needs `op` + zsh). Syntax checks: `zsh -n secrets-management/1password/zsh/agentic-secrets.zsh`, `bash -n secrets-management/1password/install.sh`. Never commit resolved secret values; `templates/secrets.env` holds `op://` references only. |
+| `secrets-management/` | 1Password-backed env secrets. Local install: `bash secrets-management/1password/install.sh` (macOS/WSL2, needs `op` + zsh). Syntax checks: `zsh -n secrets-management/1password/zsh/agentic-secrets.zsh`, `bash -n secrets-management/1password/install.sh`. Never commit resolved secret values; `templates/secrets.env` holds `op://` references only. No underscore-prefixed function names in the loader (Claude Code's shell snapshot drops them). |
 
 ## Ground rules (non-negotiable)
 

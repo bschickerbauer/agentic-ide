@@ -1,9 +1,10 @@
 # 1Password Integration for Agentic Secrets — Plan
 
 **Status:** Working on the first host (macOS) as of 2026-09-07. Phases 0 to 2 are done and verified
-for the Foundry key: key2 rotated into 1Password, loader installed, legacy plaintext files removed,
-Claude Code and the Hindsight daemon restarted on the 1Password-loaded key. Pending: invalidate key1;
-migrate the GitHub PAT. See [Execution log](#11-execution-log).
+for the Foundry key: the key was rotated into 1Password, the previously exposed plaintext key is
+invalid (verified: HTTP 401), loader installed, legacy plaintext files removed, Claude Code and the
+Hindsight daemon restarted on the 1Password-loaded key and verified end to end. Pending: migrate the
+GitHub PAT. See [Execution log](#11-execution-log).
 
 **Host assumptions:** Written from an inventory of a macOS host (Apple Silicon, zsh, oh-my-zsh
 with Powerlevel10k, 1Password desktop app + CLI 2.39). The design is OS-agnostic; WSL2 notes are
@@ -202,8 +203,9 @@ Run `claude mcp list`; the GitHub server must still be connected.
    at daemon start with `op inject -i profile.tpl -o ~/.hindsight/profiles/claude-code.env`.
    Verify the precedence (process env vs. profile file) before relying on it.
 
-4. **Rotate both secrets.** Foundry resources have two keys: switch the 1Password item to key 2,
-   run `secrets-load -f`, verify Claude Code, then regenerate key 1 in the Foundry portal.
+4. **Rotate both secrets.** Foundry resources have two keys: switch the 1Password item to the
+   key that is not in use, run `secrets-load -f`, verify Claude Code, then regenerate the exposed
+   key. (Generic procedure; what happened on the first host is in the Execution log.)
    Create a new fine-grained PAT, update the item, delete the old PAT. Rotation is mandatory
    here, not optional: both values sat in plaintext files, and during this inventory the
    Foundry key was echoed once into a Claude Code tool result (session transcript on this host).
@@ -232,7 +234,7 @@ Run `claude mcp list`; the GitHub server must still be connected.
 - [ ] `secrets-run env | grep -c FOUNDRY_API_KEY` prints `1`; `env | grep -c FOUNDRY_API_KEY` in the same shell prints `0` (before any `secrets-load`).
 - [x] Inside a Claude Code session, the Bash tool sees the variables (inherited) and does not trigger a new prompt.
 - [x] `grep -rl 'ANTHROPIC_FOUNDRY_API_KEY=' ~/.config ~/.zshrc ~/.zprofile ~/.hindsight` returns only `secrets.env` (an `op://` reference).
-- [ ] Both secrets rotated; old values invalid. (Foundry: key2 in use, key1 invalidation pending. PAT: pending.)
+- [ ] Both secrets rotated; old values invalid. (Foundry: done, the old key answers HTTP 401. PAT: pending.)
 
 ## 7. Security notes and trade-offs
 
@@ -282,7 +284,9 @@ Run `claude mcp list`; the GitHub server must still be connected.
 ## 10. Open items
 
 - Confirm `op inject` resolves bare `op://` references in a dotenv file identically to `op run --env-file` (both documented; verified in Phase 0/1).
-- Decide whether the Hindsight daemon keeps its own API key at all (`HINDSIGHT_LLM_PROVIDER=claude-code`).
+- Resolved 2026-09-07: with `HINDSIGHT_API_LLM_PROVIDER=claude-code` the Hindsight daemon does not use
+  `HINDSIGHT_API_LLM_API_KEY`; it calls the LLM through the Claude Agent SDK, which picks up the Claude
+  Code Foundry variables from the shell. The line in `secrets.env` only matters for other providers.
 - Decide on Entra ID for Foundry and OAuth for the GitHub MCP server (Phase 3).
 - bash port of the loader for WSL2 users who do not run zsh.
 
@@ -298,7 +302,9 @@ Run `claude mcp list`; the GitHub server must still be connected.
 - **key2 regenerated** with `az cognitiveservices account keys regenerate --key-name key2`, written
   straight into the item's `password` field (no value printed), hash-verified against Azure, and
   tested end-to-end with a `claude-haiku-4-5` request against the Foundry Anthropic endpoint
-  (HTTP 200; the endpoint takes the key in the `x-api-key` header).
+  (HTTP 200; the endpoint takes the key in the `x-api-key` header). *Correction, later that day:*
+  Azure reports the value stored in the item as **key1**, and the exposed plaintext key answers
+  HTTP 401, so the rotation is complete either way; see the second entry below.
 - `install.sh` run; `~/.config/agentic/config.env` set to the real resource name with lazy wrappers
   `AGENTIC_WRAP_COMMANDS="claude codex"`; `secrets.env` points all three variables at the item.
 - Two loader bugs found in the real login shell and fixed: quoted references kept their quotes
@@ -322,17 +328,29 @@ Run `claude mcp list`; the GitHub server must still be connected.
   returns only `~/.config/agentic/secrets.env`. `~/.codex/auth.json` was not recreated.
 - Still literal: the GitHub PAT, twice in `~/.claude.json` (user scope and the `/Users/<user>`
   project scope).
+- **Key audit** (SHA-256 prefixes compared, no value printed): the 1Password item holds the value
+  Azure reports as **key1**; this Claude Code session and the Hindsight daemon run on it (live
+  request: HTTP 200). The previously exposed plaintext key, still present in older Claude Code
+  transcripts, matches neither current key and answers HTTP 401. key2 (regenerated the same
+  afternoon) is an unused spare that was never written anywhere. Neither current key appears in any
+  transcript. Conclusion: rotation complete. **Do not regenerate key1; it is the live key.**
+- **Hindsight verified end to end:** daemon healthy on port 9077 (`/health`), its log shows
+  `Claude Code connection verified successfully` right after the restart, a live
+  `memories/dry-run-extract` call through the daemon returned HTTP 200 with one extracted fact (an
+  LLM round trip via the Claude Agent SDK), the MCP server `plugin:hindsight-memory:hindsight`
+  connects. The daemon inherits the Foundry variables from the wrapper-loaded shell; it does not
+  use `HINDSIGHT_API_LLM_API_KEY` with provider `claude-code`.
+- **Loader bug found from inside Claude Code:** its shell snapshot omits functions whose names start
+  with `_`, so `claude mcp list` in the Bash tool failed with `command not found: _agentic_wrap`.
+  Fixed: wrappers are self-contained, the helper is now `secrets-names`. Rule for this file: no
+  underscore-prefixed function names.
+- Hindsight MCP cold start (not a secrets issue): after a reboot the plugin starts the daemon with
+  `uvx hindsight-embed@latest`; first readiness took about 105 s, longer than Claude Code's 30 s MCP
+  connect timeout, so the first session after a cold start reports the Hindsight MCP as timed out.
+  Later sessions connect immediately.
 
 **Still open after this run:**
 
-1. Invalidate key1. Safe to run even if it was already done: nothing on this host uses key1 anymore,
-   and other machines that still use it break at that moment by design.
-
-   ```zsh
-   az cognitiveservices account keys regenerate --key-name key1 \
-     -n <foundry-resource> -g <resource-group> --subscription <subscription-id> \
-     --query 'keys(@)' -o tsv
-   ```
-
+1. Foundry keys: nothing. key1 is live in 1Password, key2 is an unused spare.
 2. GitHub PAT: create item `github-pat-claude-mcp`, add the `GITHUB_MCP_TOKEN` line, rewrite the
    MCP header (Phase 2, step 2), rotate the PAT.

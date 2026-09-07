@@ -26,6 +26,7 @@ start. Non-secret configuration stays in a plain file; nothing secret is written
 - **2026-09-07** — Plan drafted from a host inventory (macOS, zsh, 1Password CLI 2.39 with
   desktop-app integration). Same day: Foundry key rotated (key2) into the existing 1Password item
   in vault `ANDRITZ Agents`, loader installed on the first host, legacy plaintext files removed,
-  Claude Code and the Hindsight daemon restarted on the 1Password-loaded key. **Working in daily
-  use on the first host.** Open: invalidate key1; migrate the GitHub PAT (see plan, Execution
-  log). Next: WSL2 walkthrough on a second host; bash port of the loader.
+  Claude Code and the Hindsight daemon restarted on the 1Password-loaded key; Hindsight verified
+  end to end; the old plaintext key is invalid. **Working in daily use on the first host.** Open:
+  migrate the GitHub PAT (see plan, Execution log). Next: WSL2 walkthrough on a second host; bash
+  port of the loader.

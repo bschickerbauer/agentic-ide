@@ -14,7 +14,7 @@
 #   eager           AGENTIC_SECRETS_AUTOLOAD=1 resolves them at interactive shell start.
 #   isolated        secrets-run <cmd> injects secrets into that process only.
 #
-# Functions: secrets-load [-f]  secrets-unload  secrets-status  secrets-run <cmd...>  secrets-edit
+# Functions: secrets-load [-f]  secrets-unload  secrets-status  secrets-run <cmd...>  secrets-edit  secrets-names
 
 : ${AGENTIC_HOME:=$HOME/.config/agentic}
 : ${AGENTIC_CONFIG_FILE:=$AGENTIC_HOME/config.env}
@@ -25,7 +25,9 @@
 [[ -r $AGENTIC_CONFIG_FILE ]] && source "$AGENTIC_CONFIG_FILE"
 
 # Variable names managed by the secrets file (used by unload/status).
-_agentic_secret_names() {
+# No leading underscore anywhere in this file: Claude Code's shell snapshot omits functions whose
+# name starts with "_", and the wrappers below must keep working inside its Bash tool.
+secrets-names() {
   [[ -r $AGENTIC_SECRETS_FILE ]] || return 1
   sed -nE 's/^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)=.*$/\2/p' "$AGENTIC_SECRETS_FILE"
 }
@@ -66,7 +68,7 @@ secrets-load() {
 # Remove every managed variable from this shell.
 secrets-unload() {
   local k
-  for k in ${(f)"$(_agentic_secret_names)"}; do unset "$k"; done
+  for k in ${(f)"$(secrets-names)"}; do unset "$k"; done
   unset AGENTIC_SECRETS_LOADED
 }
 
@@ -76,7 +78,7 @@ secrets-status() {
   print "config : $AGENTIC_CONFIG_FILE  ($([[ -r $AGENTIC_CONFIG_FILE ]] && print ok || print missing))"
   print "secrets: $AGENTIC_SECRETS_FILE  ($([[ -n $AGENTIC_SECRETS_LOADED ]] && print loaded || print 'not loaded'))"
   print "op     : $(command -v op >/dev/null 2>&1 && op --version || print 'not installed')"
-  for k in ${(f)"$(_agentic_secret_names)"}; do
+  for k in ${(f)"$(secrets-names)"}; do
     v=${(P)k}
     if [[ -n $v ]]; then printf '  %-32s set (%d chars)\n' "$k" ${#v}
     else printf '  %-32s unset\n' "$k"; fi
@@ -91,19 +93,18 @@ secrets-run() {
 
 secrets-edit() { "${EDITOR:-vi}" "$AGENTIC_SECRETS_FILE"; }
 
-# 2. Lazy wrappers: load on first use, then exec the real binary. Skipped inside Claude Code's
-#    own Bash tool (CLAUDECODE is set there and the environment is already inherited).
-_agentic_wrap() {
-  local bin=$1; shift
-  if [[ -z $AGENTIC_SECRETS_LOADED && -z $CLAUDECODE ]]; then
-    secrets-load || print -u2 "$bin: starting without 1Password secrets"
-  fi
-  command "$bin" "$@"
-}
-for _agentic_cmd in ${=AGENTIC_WRAP_COMMANDS}; do
-  eval "${_agentic_cmd}() { _agentic_wrap ${_agentic_cmd} \"\$@\"; }"
+# 2. Lazy wrappers: load on first use, then run the real binary. Skipped inside Claude Code's
+#    own Bash tool (CLAUDECODE is set there and the environment is already inherited). Each
+#    wrapper is self-contained so it still works when only the wrapper itself was snapshotted.
+for agentic_cmd in ${=AGENTIC_WRAP_COMMANDS}; do
+  eval "${agentic_cmd}() {
+    if [[ -z \$AGENTIC_SECRETS_LOADED && -z \$CLAUDECODE ]]; then
+      secrets-load || print -u2 \"${agentic_cmd}: starting without 1Password secrets\"
+    fi
+    command ${agentic_cmd} \"\$@\"
+  }"
 done
-unset _agentic_cmd
+unset agentic_cmd
 
 # 3. Eager mode: opt in, interactive shells only, never inside Claude Code, never blocking on error.
 if [[ -n $AGENTIC_SECRETS_AUTOLOAD && -o interactive && -z $CLAUDECODE ]]; then
