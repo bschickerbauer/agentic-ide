@@ -242,7 +242,7 @@ Run `claude mcp list`; the GitHub server must still be connected.
 - [ ] With the 1Password app quit, a wrapped command prints `the 1Password desktop app is not running` and still starts; after `open -a 1Password` and the CLI prompt, `secrets-load` succeeds. (Graceful start observed 2026-09-07 with `codex`; the new hint is verified against the recorded `op` error text with a simulated `op`; a rerun with the app really quit is pending.)
 - [x] `grep -rl 'ANTHROPIC_FOUNDRY_API_KEY=' ~/.config ~/.zshrc ~/.zprofile ~/.hindsight` returns only `secrets.env` (an `op://` reference).
 - [ ] Both secrets rotated; old values invalid. (Foundry: done, the old key answers HTTP 401. PAT: pending.)
-- [ ] Claude desktop app (third-party-provider mode) healthy after the rotation: key re-entered in Setup, "Check again" succeeds, `main.log` shows `ConfigHealth recomputed { state: 'healthy' }`. (Found failing on 2026-09-08 with the pre-rotation key; fix pending.)
+- [x] Claude desktop app (third-party-provider mode) healthy after the rotation: key re-entered in Setup on 2026-09-08 12:51, `main.log` shows `ConfigHealth recomputed { state: 'healthy' }`, stored key hash-equal to the 1Password value.
 
 ## 7. Security notes and trade-offs
 
@@ -435,6 +435,8 @@ Run `claude mcp list`; the GitHub server must still be connected.
   Phase 2, in section 7 and in the checklist.
 - Docs check for an alternative to the static copy: none documented for the desktop app (details in
   section 10). The CLI's Entra ID path stays a Phase 3 item for Claude Code only.
+- Resolved 12:51 the same day: key re-entered in Setup by the owner; the next health probe was
+  `healthy`, and the app's config store now holds the live key (hash comparison, no value printed).
 
 **Still open after this run:**
 
