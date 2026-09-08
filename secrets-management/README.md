@@ -36,3 +36,7 @@ start. Non-secret configuration stays in a plain file; nothing secret is written
   Prerequisite found the same day: the 1Password **desktop app must be running**, `op` has no session
   of its own; if it is not, the wrapped CLI starts without secrets and `secrets-load` now says so
   (plan, section 7). Next: WSL2 walkthrough on a second host; bash port of the loader.
+- **2026-09-08** — Found a fourth Foundry-key consumer that 1Password cannot feed: the Claude desktop
+  app in third-party-provider mode keeps a static plaintext copy of the key in its own config store
+  and failed with HTTP 401 after the rotation. Recorded as a rotation step (plan, Phase 2 step 4,
+  sections 2, 7, 11). Fix: re-enter the key in the app's Setup.

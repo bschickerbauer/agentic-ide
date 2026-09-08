@@ -27,6 +27,7 @@ session instead of plaintext at rest.
 |---|--------|-------|-----------|-------|
 | 1 | Microsoft Foundry resource key (resource `<foundry-resource>`) | Plaintext in `~/.config/env/anthropic_foundry.env` as `ANTHROPIC_FOUNDRY_API_KEY`; the **same value** again in `~/.config/env/openai_foundry.env` as `AZURE_OPENAI_API_KEY`; very likely again in `~/.hindsight/profiles/claude-code.env` as `HINDSIGHT_API_LLM_API_KEY` | Claude Code (Foundry), Azure OpenAI SDK/tools, Hindsight daemon | Three copies of one key. Both env files are sourced at shell start; the Anthropic one twice (`.zprofile` and `.zshrc`). |
 | 1b | Same Foundry key, further copies found by a full-text scan | `~/.codex/auth.json` (`OPENAI_API_KEY`), a stale `~/.codex/config.toml.save`, and three Claude Code session transcripts under `~/.claude/projects/` | Codex CLI (reads `env_key = "AZURE_OPENAI_API_KEY"` from `config.toml`, so the env variable covers it) | Copies become harmless once key1 is invalidated; delete the stale `.save` file anyway. |
+| 1c | Same Foundry key, **Claude desktop app in third-party-provider mode** (found 2026-09-08) | Static plaintext copy in the app's own config store `~/Library/Application Support/Claude-3p/configLibrary/<uuid>.json` (`inferenceCredentialKind: static`, mode 600), entered once in the app's Setup screen on 2026-09-04; the app also writes a short-lived plaintext handoff file `host-creds-<uuid>.json` (`env.ANTHROPIC_FOUNDRY_API_KEY`, hourly expiry) for its embedded Claude Code, and imported session transcripts under `claude-code-sessions/` can contain the key | Claude desktop app: Chat, Cowork, and its Code tab | Not reachable from the shell: the app does not read the terminal environment, so 1Password cannot feed it. It keeps its own copy and **must be updated in Setup after every key rotation**; otherwise it fails with HTTP 401 ("Couldn't sign in to Foundry"). |
 | 2 | GitHub fine-grained PAT | Literal `Authorization: Bearer github_pat_…` header in `~/.claude.json`, once in the user-scope `mcpServers.github` entry and once in the `/Users/<user>` project-scope entry | GitHub MCP server (`https://api.githubcopilot.com/mcp`) | Claude Code expands `${VAR}` in MCP `headers`, so the literal can become `Bearer ${GITHUB_MCP_TOKEN}`. |
 
 ### Secrets that stay where they are (already handled well)
@@ -210,6 +211,11 @@ Run `claude mcp list`; the GitHub server must still be connected.
    here, not optional: both values sat in plaintext files, and during this inventory the
    Foundry key was echoed once into a Claude Code tool result (session transcript on this host).
 
+   **Consumers that hold their own copy and need a manual update after a Foundry rotation:** the
+   Claude desktop app in third-party-provider mode (Setup > Foundry API key; see row 1c in
+   section 2). Everything that reads the shell environment (Claude Code CLI, Codex, Hindsight
+   daemon after a restart) follows the 1Password item automatically.
+
 5. Open a fresh terminal and confirm `env | grep -c FOUNDRY_API_KEY` prints `0` until `claude`
    is started (lazy) or `1` immediately (eager).
 
@@ -236,6 +242,7 @@ Run `claude mcp list`; the GitHub server must still be connected.
 - [ ] With the 1Password app quit, a wrapped command prints `the 1Password desktop app is not running` and still starts; after `open -a 1Password` and the CLI prompt, `secrets-load` succeeds. (Graceful start observed 2026-09-07 with `codex`; the new hint is verified against the recorded `op` error text with a simulated `op`; a rerun with the app really quit is pending.)
 - [x] `grep -rl 'ANTHROPIC_FOUNDRY_API_KEY=' ~/.config ~/.zshrc ~/.zprofile ~/.hindsight` returns only `secrets.env` (an `op://` reference).
 - [ ] Both secrets rotated; old values invalid. (Foundry: done, the old key answers HTTP 401. PAT: pending.)
+- [ ] Claude desktop app (third-party-provider mode) healthy after the rotation: key re-entered in Setup, "Check again" succeeds, `main.log` shows `ConfigHealth recomputed { state: 'healthy' }`. (Found failing on 2026-09-08 with the pre-rotation key; fix pending.)
 
 ## 7. Security notes and trade-offs
 
@@ -271,6 +278,13 @@ Run `claude mcp list`; the GitHub server must still be connected.
 - **Failure mode is loud but not fatal.** If 1Password is locked or not running, or the reference
   is wrong, `secrets-load` prints one line to stderr and the wrapped command starts without the
   secret; Claude Code then reports the Foundry credential-chain error, which points at the cause.
+- **The Claude desktop app keeps its own plaintext copy.** In third-party-provider mode the app
+  stores the Foundry key as a static value in its config store (mode 600, not the Keychain), writes
+  it into an hourly refreshed `host-creds-<uuid>.json` handoff file for its embedded Claude Code,
+  and session transcripts it imports can contain it as well. This is the one consumer on the host
+  that 1Password cannot feed today. Accept it as an at-rest copy under file permissions, and treat
+  it as part of the rotation procedure (Phase 2, step 4). Observed 2026-09-08: the app still held
+  the pre-rotation key one day after the rotation and failed every health probe with HTTP 401.
 - **`op run` and TTYs.** `op run` masks secrets by piping the child's output, which breaks
   full-screen TUIs. `secrets-run` therefore passes `--no-masking`; the trade-off is that a leaked
   value in output is not redacted.
@@ -311,6 +325,13 @@ Run `claude mcp list`; the GitHub server must still be connected.
   Code Foundry variables from the shell. The line in `secrets.env` only matters for other providers.
 - Decide on Entra ID for Foundry and OAuth for the GitHub MCP server (Phase 3).
 - bash port of the loader for WSL2 users who do not run zsh.
+- Claude desktop app in third-party-provider mode: re-enter the rotated Foundry key in Setup (found
+  2026-09-08). Checked the same day: the official docs describe Entra ID, bearer token
+  (`ANTHROPIC_FOUNDRY_AUTH_TOKEN`) and the credential chain only for the Claude Code CLI
+  (code.claude.com/docs/en/microsoft-foundry); for the desktop app's third-party-provider mode
+  neither a non-static credential kind nor the managed-config keys for provider credentials are
+  documented (support.claude.com, "Enterprise configuration for Claude Desktop"). Static key it is,
+  until Anthropic documents an alternative; re-check when the desktop app or its docs change.
 
 ## 11. Execution log
 
@@ -395,6 +416,25 @@ Run `claude mcp list`; the GitHub server must still be connected.
   authorization prompt follows on the next call. Prerequisite recorded in sections 7 and 9 and in
   the loader header. The loader does not start the app itself: the first `op` call after a start
   needs the app's authorization prompt anyway, and on WSL2 the app lives on the Windows side.
+
+**2026-09-08, Claude desktop app cannot sign in to Foundry (same host):**
+
+- Symptom: the desktop app (third-party-provider mode, provider Foundry, set up 2026-09-04) shows
+  "Couldn't sign in to Foundry. The provider rejected your credentials. Re-enter them in Setup."
+  `main.log`: `credential rejected by server { channel: 'config-health-probe', httpStatus: 401 }`
+  on every launch since 2026-09-08 11:01, the first launch after the key rotation of 2026-09-07;
+  on 2026-09-05 the same probe was still `healthy`.
+- Cause (verified by hash comparison, no value printed): the key in the app's config store and in
+  its `host-creds` handoff file is **not** the live key from 1Password. The app holds a static copy
+  of the pre-rotation key, which the rotation invalidated. It does not read the shell environment,
+  so the 1Password loader cannot help it. Copies of the old key on disk: config store (1),
+  `host-creds` file (1), one imported session transcript (2). The live key appears nowhere under
+  the app's data directory.
+- Fix: open Setup in the app, replace the Foundry API key with the current value from the
+  1Password item, "Check again". Recorded as consumer 1c in section 2, as a rotation step in
+  Phase 2, in section 7 and in the checklist.
+- Docs check for an alternative to the static copy: none documented for the desktop app (details in
+  section 10). The CLI's Entra ID path stays a Phase 3 item for Claude Code only.
 
 **Still open after this run:**
 
