@@ -18,7 +18,7 @@ This is not a single product with one build. It grows as a collection of indepen
 
 | Folder | Tooling / commands |
 |--------|--------------------|
-| `agent-memory/` | Documentation only (deployment plan, architecture HTML). No build. |
+| `agent-memory/` | Deployment plan + architecture HTML + Bicep IaC in `hindsight-on-azure/infra/`. Checks: `az bicep build --file agent-memory/hindsight-on-azure/infra/main.bicep --stdout > /dev/null`, `bash -n agent-memory/hindsight-on-azure/infra/deploy.sh`. **Never run `deploy.sh create` (or any `az ... create/delete`) without Bernd's explicit approval in the current conversation**; `what-if` and read-only `az` calls are fine. Real governance tags live only in the gitignored `main.local.bicepparam`. |
 | `secrets-management/` | 1Password-backed env secrets. Local install: `bash secrets-management/1password/install.sh` (macOS/WSL2, needs `op` + zsh). Syntax checks: `zsh -n secrets-management/1password/zsh/agentic-secrets.zsh`, `bash -n secrets-management/1password/install.sh`. Never commit resolved secret values; `templates/secrets.env` holds `op://` references only. No underscore-prefixed function names in the loader (Claude Code's shell snapshot drops them). |
 
 ## Ground rules (non-negotiable)

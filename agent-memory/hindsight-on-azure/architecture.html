@@ -228,7 +228,7 @@
           <button class="toolbar-toggle" onclick="this.parentElement.classList.toggle('expanded')" title="Export options" aria-label="Export options">⋯</button>
         </div>
       </div>
-      <p class="subtitle">One memory service for the cross-site team · Azure Container Apps + PostgreSQL Flexible Server + Azure AI Foundry · Draft v1 · September 5, 2026</p>
+      <p class="subtitle">One memory service for the cross-site team · Azure Container Apps + PostgreSQL Flexible Server + Azure AI Foundry · Draft v2 · September 8, 2026</p>
     </div>
 
     <!-- Main Diagram -->
@@ -266,7 +266,7 @@
 
         <!-- Azure boundary -->
         <rect x="390" y="40" width="750" height="620" rx="8" fill="none" stroke="#003a70" stroke-width="1.2" stroke-dasharray="8,4"/>
-        <text x="404" y="62" fill="#003a70" font-size="11" font-weight="700" font-family="Barlow Condensed, Arial Narrow, sans-serif" letter-spacing="0.06em">MICROSOFT AZURE — WEST EUROPE · RG-WEU-HINDSIGHT-DEV</text>
+        <text x="404" y="62" fill="#003a70" font-size="11" font-weight="700" font-family="Barlow Condensed, Arial Narrow, sans-serif" letter-spacing="0.06em">MICROSOFT AZURE — WEST EUROPE · RG-WEU-AAIH-HINDSIGHT-PROD (PROPOSED)</text>
 
         <!-- ACA environment sub-boundary -->
         <rect x="410" y="80" width="340" height="280" rx="8" fill="none" stroke="#7fbade" stroke-width="1.2"/>
@@ -274,7 +274,7 @@
 
         <!-- Foundry sub-boundary -->
         <rect x="790" y="300" width="330" height="340" rx="8" fill="none" stroke="#89a429" stroke-width="1.2" stroke-dasharray="4,4"/>
-        <text x="804" y="322" fill="#4e5530" font-size="10" font-weight="700" font-family="Barlow Condensed, Arial Narrow, sans-serif" letter-spacing="0.06em">AZURE AI FOUNDRY (AAIH RESOURCE)</text>
+        <text x="804" y="322" fill="#4e5530" font-size="10" font-weight="700" font-family="Barlow Condensed, Arial Narrow, sans-serif" letter-spacing="0.06em">AZURE AI FOUNDRY — SWEDEN CENTRAL (DEDICATED ACCOUNT ais-sdc-aaih-hindsight-prod)</text>
 
         <!-- ===================== ARROWS (behind component boxes) ===================== -->
 
@@ -349,21 +349,21 @@
         <!-- Hindsight API app -->
         <rect x="430" y="120" width="290" height="100" rx="4" fill="#bfdcef" stroke="#0075be" stroke-width="1.5"/>
         <text x="575" y="140" fill="#003a70" font-size="12" font-weight="700" text-anchor="middle" font-family="Barlow Condensed, Arial Narrow, sans-serif" letter-spacing="0.05em">HINDSIGHT API</text>
-        <text x="575" y="156" fill="#585d67" font-size="9" text-anchor="middle">ca-weu-hindsight-api-dev · slim image · 1 vCPU / 2 GiB</text>
+        <text x="575" y="156" fill="#585d67" font-size="9" text-anchor="middle">ca-weu-aaih-hindsight-api-prod · slim image · 1 vCPU / 2 GiB</text>
         <text x="575" y="171" fill="#585d67" font-size="9" text-anchor="middle">REST /v1 · MCP /mcp/{bank_id}/ · retain · recall · reflect</text>
         <text x="575" y="186" fill="#585d67" font-size="8" text-anchor="middle">internal worker · stable HINDSIGHT_API_WORKER_ID</text>
-        <text x="575" y="206" fill="#0075be" font-size="7" text-anchor="middle" font-family="ui-monospace, Menlo, monospace">ghcr.io/vectorize-io/hindsight-api:&lt;ver&gt;-slim</text>
+        <text x="575" y="206" fill="#0075be" font-size="7" text-anchor="middle" font-family="ui-monospace, Menlo, monospace">ghcr.io/vectorize-io/hindsight-api:0.9.2-slim</text>
 
         <!-- Control Plane app -->
         <rect x="430" y="260" width="290" height="70" rx="4" fill="#bfdcef" stroke="#0075be" stroke-width="1.5"/>
         <text x="575" y="282" fill="#003a70" font-size="11" font-weight="700" text-anchor="middle" font-family="Barlow Condensed, Arial Narrow, sans-serif" letter-spacing="0.05em">CONTROL PLANE (WEB UI)</text>
-        <text x="575" y="298" fill="#585d67" font-size="9" text-anchor="middle">ca-weu-hindsight-cp-dev · scale 0–1</text>
-        <text x="575" y="314" fill="#585d67" font-size="8" text-anchor="middle">Entra ID (built-in auth) + access key</text>
+        <text x="575" y="298" fill="#585d67" font-size="9" text-anchor="middle">ca-weu-aaih-hindsight-cp-prod · scale 0–1</text>
+        <text x="575" y="314" fill="#585d67" font-size="8" text-anchor="middle">access key · optional Entra ID (built-in auth)</text>
 
         <!-- PostgreSQL -->
         <rect x="410" y="500" width="340" height="130" rx="4" fill="#bfcedb" stroke="#003a70" stroke-width="1.5"/>
         <text x="580" y="524" fill="#003a70" font-size="12" font-weight="700" text-anchor="middle" font-family="Barlow Condensed, Arial Narrow, sans-serif" letter-spacing="0.05em">AZURE DATABASE FOR POSTGRESQL</text>
-        <text x="580" y="541" fill="#585d67" font-size="9" text-anchor="middle">psql-weu-hindsight-dev · Flexible Server · PG 17</text>
+        <text x="580" y="541" fill="#585d67" font-size="9" text-anchor="middle">psql-weu-aaih-hindsight-prod · Flexible Server · PG 17</text>
         <text x="580" y="558" fill="#003a70" font-size="9" font-weight="600" text-anchor="middle">vector 0.8.2 — HNSW (active)</text>
         <text x="580" y="574" fill="#003a70" font-size="9" font-weight="600" text-anchor="middle">pg_diskann 0.6.5 — DiskANN (enabled, scale path)</text>
         <text x="580" y="590" fill="#585d67" font-size="8" text-anchor="middle">private access · sslmode=require · PITR 14 d · B2ms → D2ds_v5</text>
@@ -372,7 +372,7 @@
         <!-- Key Vault -->
         <rect x="790" y="90" width="330" height="60" rx="4" fill="#fddfc4" stroke="#ee7203" stroke-width="1.5"/>
         <text x="955" y="112" fill="#003a70" font-size="11" font-weight="700" text-anchor="middle" font-family="Barlow Condensed, Arial Narrow, sans-serif" letter-spacing="0.05em">KEY VAULT + MANAGED IDENTITY</text>
-        <text x="955" y="128" fill="#585d67" font-size="9" text-anchor="middle">kv-weu-hindsight-dev · id-weu-hindsight-dev (UAMI)</text>
+        <text x="955" y="128" fill="#585d67" font-size="9" text-anchor="middle">kvweuaaihhindsightprod · id-weu-aaih-hindsight-prod (UAMI)</text>
         <text x="955" y="142" fill="#585d67" font-size="8" text-anchor="middle">model keys · DB connection string · tenant API key</text>
 
         <!-- Log Analytics -->
@@ -457,7 +457,7 @@
         <ul>
           <li>• <code>gpt-5-mini</code> — extraction, reflect, consolidation (Data Zone EU)</li>
           <li>• <code>text-embedding-3-small</code> — 1536 dims, dimension-locked at first retain</li>
-          <li>• <code>Cohere-rerank-v4.0-fast</code> — /v2/rerank, failover member: <code>rrf</code></li>
+          <li>• <code>Cohere-rerank-v4.0-fast</code> — invoke URL used verbatim; first deployment <code>rrf</code>, then failover member <code>rrf</code></li>
           <li>• Base URL gotcha: <code>https://&lt;res&gt;.openai.azure.com/openai/v1</code></li>
           <li>• If key auth is disabled by policy: route via APIM AI Gateway (managed identity)</li>
         </ul>
@@ -480,7 +480,7 @@
 
     <!-- Footer -->
     <p class="footer">
-      Hindsight on Azure — Target Architecture · Draft v1 · September 5, 2026 · Solution Design &amp; Consulting · ©ANDRITZ
+      Hindsight on Azure — Target Architecture · Draft v2 · September 8, 2026 · Solution Design &amp; Consulting · ©ANDRITZ
     </p>
   </div>
 

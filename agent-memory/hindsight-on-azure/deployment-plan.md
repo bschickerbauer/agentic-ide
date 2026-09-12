@@ -1,6 +1,7 @@
 # Hindsight on Azure — Deployment Plan
 
-**Status:** Draft v1 (September 5, 2026) · **Owner:** Bernd Schickerbauer (SDC)
+**Status:** Draft v2 (September 8, 2026) — IaC written and compiled, **provisioning awaits
+approval** · **Owner:** Bernd Schickerbauer (SDC)
 **Goal:** Replace device-bound local Hindsight instances with one shared, Azure-hosted
 Hindsight service so agents retain and recall memory **across team members and hosts**.
 
@@ -18,74 +19,82 @@ small and boring in the best sense:
   with the `vector` and `pg_diskann` extensions enabled.
 - **Azure AI Foundry** serves all three model roles: extraction/reasoning LLM,
   embeddings, and reranking (Cohere Rerank, Cohere-compatible `/rerank` endpoint).
-- Team members connect via the built-in **MCP endpoint** (`/mcp/{bank_id}/`) from
-  Claude Code, or via the Hindsight CLI/SDKs — from any machine, any site.
+- Team members connect via the **hindsight-memory Claude Code plugin in remote mode**, the
+  built-in **MCP endpoint** (`/mcp/{bank_id}/`), or the Hindsight CLI/SDKs — from any
+  machine, any site.
 
 No GPU, no vector database product, no Kubernetes cluster required.
+
+Everything below is implemented as Bicep in [`infra/`](infra/README.md): one subscription-scope
+deployment creates the resource group and all resources. `deploy.sh` previews with `what-if`
+by default; `create` runs only after explicit approval.
 
 ## 2. Key decisions
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Compute | **Azure Container Apps** (dedicated env not required; Consumption plan) | Slim image is ~500 MB, stateless, no GPU needed. Managed identity, Key Vault refs, VNet integration, revisions. AKS + the official Helm chart is the documented alternative — only worth it if we standardize this on an existing cluster. |
-| Image variant | **`hindsight-api:<version>-slim`** + external model providers | Full image is ~9 GB because it bundles local embedding/reranker models and PyTorch. On Azure we delegate all model calls to Foundry → small image, fast deploys, ~512 MB–1 GB RAM. |
-| Database | **Azure Database for PostgreSQL Flexible Server, PG 17** | Hindsight requires PostgreSQL 14+ with a vector extension; Azure is a tested managed service in the Hindsight docs. |
-| Vector index | **Start `pgvector` (HNSW), enable `pg_diskann` from day 1** | pgvector 0.8.2 on Flexible Server (all live PG majors) — supports Hindsight's iterative index scans (needs ≥ 0.8.0). HNSW is the most-deployed path and ideal < 10 M vectors; team-scale memory is far below that. `pg_diskann` 0.6.5 (PG 14–18) is allow-listed up front so the documented switch to `HINDSIGHT_API_VECTOR_EXTENSION=pgvectorscale` (which uses DiskANN on Azure) is a config change + re-index, not a server migration. |
-| LLM | **Azure OpenAI via Foundry** — `gpt-5-mini` deployment (Hindsight default model), Data Zone Standard (EU) | Reached with `HINDSIGHT_API_LLM_PROVIDER=openai` and base URL `https://<resource>.openai.azure.com/openai/v1` (the resource root and the bare deployments URL both 404 — documented Hindsight gotcha). |
-| Embeddings | **`text-embedding-3-small` (1536 dims)** via the same Foundry resource | Explicitly supported by Hindsight's `openai` embeddings provider with an Azure base URL. 1536 dims works with both HNSW (≤ 2000-dim index limit) and DiskANN. Multilingual-capable — relevant for a German/English team. |
-| Reranker | **Cohere Rerank v4.0 Fast on Foundry** (Data Zone Standard EU: westeurope, germanywestcentral, swedencentral), **failover to `rrf`** | Hindsight's `cohere` reranker provider explicitly supports Azure AI Foundry via `HINDSIGHT_API_RERANKER_COHERE_BASE_URL` (full invoke URL). The indexed failover member `rrf` makes recall fail open (fusion order) instead of failing when the reranker is down. |
-| AuthN (phase 1) | Hindsight built-in **`ApiKeyTenantExtension`** (single shared bearer key) + HTTPS via ACA ingress | Smallest thing that safely works for one team. |
+| Subscription (**proposal, pending approval**) | The team's Claude Code subscription (AAIH) | It already hosts the team's per-person Foundry resources for Claude Code, plus a Container Apps environment, Key Vault and Log Analytics — same audience, same cost owner, same admin rights (Owner via management group). ECM Shared remains the alternative if AAIH is to stay Claude-Code-only. |
+| Naming & tags | Follow the host subscription's existing convention: `<type>-weu-aaih-hindsight-prod`, RG `rg-weu-aaih-hindsight-prod`; the same nine governance tags as the neighboring resource groups | Everything in that subscription is tagged `Environment: Production` and named `-prod`/`-production`; a `-dev` island would be the odd one out. All tokens are Bicep parameters, so renaming is a parameter change. Real tag values live only in the gitignored `main.local.bicepparam` (this repo is public). |
+| Compute | **Azure Container Apps** (workload-profile environment, Consumption profile, VNet-integrated) | Slim image is ~500 MB, stateless, no GPU needed. Managed identity, Key Vault refs, VNet integration, revisions. AKS + the official Helm chart is the documented alternative — only worth it if we standardize this on an existing cluster. |
+| Image variant | **`hindsight-api:0.9.2-slim`** + `hindsight-control-plane:0.9.2` (pinned) | Full image is ~9 GB because it bundles local embedding/reranker models and PyTorch. On Azure we delegate all model calls to Foundry → small image, fast deploys, ~512 MB–1 GB RAM. v0.9.2 is the current release (August 25, 2026) and the version the local daemons already run. |
+| Database | **Azure Database for PostgreSQL Flexible Server, PG 17**, private access (delegated subnet) | Hindsight requires PostgreSQL 14+ with a vector extension; Azure is a tested managed service in the Hindsight docs. PG 17 and `Standard_B2ms` verified available in westeurope. |
+| Vector index | **Start `pgvector` (HNSW), enable `pg_diskann` from day 1** | pgvector 0.8.2 on Flexible Server — supports Hindsight's iterative index scans (needs ≥ 0.8.0). HNSW is the most-deployed path and ideal < 10 M vectors; team-scale memory is far below that. `pg_diskann` 0.6.5 is allow-listed up front so the documented switch to `HINDSIGHT_API_VECTOR_EXTENSION=pgvectorscale` (which uses DiskANN on Azure) is a config change + re-index, not a server migration. |
+| Foundry account | **Dedicated AI Services account** `ais-sdc-aaih-hindsight-prod` (swedencentral) instead of reusing a personal one | A shared service must not depend on one person's key: rotating a personal Claude Code key would take the team memory down, and Hindsight's extraction load would compete with that person's interactive quota. The dedicated account costs nothing idle (pay-per-use) and gets its own key lifecycle in Key Vault. |
+| LLM | **`gpt-5-mini`** (version 2025-08-07), Data Zone Standard | Hindsight's default model. Reached with `HINDSIGHT_API_LLM_PROVIDER=openai` and base URL `https://<account>.openai.azure.com/openai/v1` (the resource root and the bare deployments URL both 404 — documented Hindsight gotcha). |
+| Embeddings | **`text-embedding-3-small` (1536 dims)**, Data Zone Standard, `NoAutoUpgrade` | Explicitly supported by Hindsight's `openai` embeddings provider with an Azure base URL. 1536 dims works with both HNSW (≤ 2000-dim index limit) and DiskANN. Multilingual-capable. The deployment is pinned against automatic version upgrades because the embedding dimension is locked once memories exist. |
+| Reranker | **`Cohere-rerank-v4.0-fast`** on the same account, Data Zone Standard; **first deployment runs `rrf`**, then `cohere` with **failover to `rrf`** | Hindsight's `cohere` reranker POSTs to `HINDSIGHT_API_RERANKER_COHERE_BASE_URL` verbatim (verified in the source: `rerank_url == base_url`), so any URL shape incl. a query string works — but the exact invoke URL of a Cohere deployment on a Foundry account is only visible after the deployment exists. Until then recall uses fusion order (`rrf`), which is Hindsight's documented fail-open behavior anyway. |
+| AuthN (phase 1) | Hindsight built-in **`ApiKeyTenantExtension`** (single shared bearer key) + HTTPS via ACA ingress; Control Plane behind an access key, optional Entra ID login (ACA built-in auth) | Smallest thing that safely works for one team. |
 | AuthN (phase 2) | **APIM in front** — per-user subscription keys / Entra ID JWT validation; APIM injects the shared Hindsight key and a per-caller header (`HINDSIGHT_API_EXTENSION_PASSTHROUGH_HEADERS`) | Hindsight documents exactly this gateway pattern. Fits our APIOps estate; MCP is streamable HTTP and proxies through APIM. |
-| Secrets | **Key Vault** + user-assigned managed identity, ACA secret references | LLM/embedding/rerank keys, DB connection string, tenant API key. No secrets in app config. |
+| Secrets | **Key Vault** (RBAC) + user-assigned managed identity, ACA secret references | Connection string, Foundry key1, tenant key, UI access key. No secrets in app config or parameter files: the deployment reads them from environment variables provided by the 1Password-backed shell (`secrets-management/`). |
 | Memory language | `HINDSIGHT_API_LLM_OUTPUT_LANGUAGE=English` | Team ground rule: artifacts and shared knowledge in EN-US, regardless of input language. |
+| Deployment path | Local `az deployment sub` via `infra/deploy.sh`, run by the owner | This repo is a public personal repo; wiring GitHub Actions OIDC from it into the corporate tenant is not appropriate. A pipeline can follow once the topic moves to an internal repo. |
 
 ## 3. Target architecture
 
 ```
  Team clients (any site, any host)
- ├─ Claude Code  ── MCP (streamable HTTP)  ─┐
- ├─ Hindsight CLI (~/.hindsight/config)     ├── https ──►  [Phase 2: APIM]  ──►  ACA ingress
- └─ SDKs (Python/Node) / Control Plane UI  ─┘                                        │
-                                                                                     ▼
-   Azure Container Apps environment (VNet-integrated, West Europe)
-   ├─ ca-hindsight-api   ghcr.io/vectorize-io/hindsight-api:<ver>-slim   (internal worker on)
-   └─ ca-hindsight-cp    ghcr.io/vectorize-io/hindsight-control-plane    (internal ingress)
+ ├─ Claude Code + hindsight-memory plugin (remote mode) ─┐
+ ├─ Claude Code MCP (streamable HTTP)                     ├── https ──►  [Phase 2: APIM]  ──►  ACA ingress
+ ├─ Hindsight CLI (~/.hindsight/config)                   │                                        │
+ └─ SDKs (Python/Node) / Control Plane UI ────────────────┘                                        ▼
+   Azure Container Apps environment  cae-weu-aaih-hindsight-prod  (VNet-integrated, West Europe)
+   ├─ ca-weu-aaih-hindsight-api-prod   ghcr.io/vectorize-io/hindsight-api:0.9.2-slim   (internal worker, 1 replica)
+   └─ ca-weu-aaih-hindsight-cp-prod    ghcr.io/vectorize-io/hindsight-control-plane:0.9.2 (0–1 replicas)
                 │                                       │
-                │ private endpoint / VNet               │ model calls (https)
+                │ delegated subnet + private DNS        │ model calls (https)
                 ▼                                       ▼
-   Azure Database for PostgreSQL                Azure AI Foundry (AAIH resource)
-   Flexible Server PG17                         ├─ gpt-5-mini            (LLM, DZ-EU)
-   extensions: vector 0.8.2,                    ├─ text-embedding-3-small (1536 dims)
-               pg_diskann 0.6.5                 └─ Cohere-rerank-v4.0-fast (DZ-EU)
+   psql-weu-aaih-hindsight-prod                 ais-sdc-aaih-hindsight-prod (Foundry, Sweden Central)
+   PostgreSQL Flexible Server 17, B2ms          ├─ gpt-5-mini              (LLM, Data Zone Standard)
+   extensions: vector 0.8.2, pg_diskann 0.6.5   ├─ text-embedding-3-small  (1536 dims, no auto-upgrade)
+                                                └─ Cohere-rerank-v4.0-fast (Data Zone Standard)
 
-   Cross-cutting: Key Vault + UAMI · Log Analytics (+ optional OTel→App Insights) · Bicep IaC
+   Cross-cutting: kvweuaaihhindsightprod (Key Vault, RBAC) · id-weu-aaih-hindsight-prod (UAMI)
+                  log-weu-aaih-hindsight-prod · vnet-weu-aaih-hindsight-prod (10.60.0.0/23) · Bicep IaC
 ```
 
 ### Components
 
-| Component | Resource (proposal) | Notes |
+| Component | Resource | Notes |
 |---|---|---|
-| Resource group | `RG-WEU-HINDSIGHT-DEV` | Align final name with CAF/ANDRITZ convention; subscription TBD. |
-| ACA environment | `cae-weu-hindsight-dev` | VNet-integrated; Consumption workload profile. |
-| API app | `ca-weu-hindsight-api-dev` | 1 vCPU / 2 GiB, **min 1 / max 1 replica** initially (see worker identity note), external ingress :8888. |
-| Control Plane app | `ca-weu-hindsight-cp-dev` | 0.25 vCPU / 0.5 GiB, scale 0–1, ingress external, protected by ACA built-in Entra ID auth + `HINDSIGHT_CP_ACCESS_KEY`. Talks to the API server-side (`HINDSIGHT_CP_DATAPLANE_API_URL` + `..._API_KEY`), so the API's internal FQDN suffices. |
-| PostgreSQL | `psql-weu-hindsight-dev` | PG 17, `Standard_B2ms` to start (General Purpose `D2ds_v5` if latency matters), 32–128 GiB storage, private access. |
-| Key Vault | `kv-weu-hindsight-dev` | RBAC mode; UAMI gets *Key Vault Secrets User*. |
-| Managed identity | `id-weu-hindsight-dev` | User-assigned, attached to both apps. |
-| Log Analytics | `log-weu-hindsight-dev` | ACA logs; Hindsight set to `HINDSIGHT_API_LOG_FORMAT=json`. |
-| Foundry | reuse **AAIH** Foundry resource | New deployments: `gpt-5-mini`, `text-embedding-3-small`, `Cohere-rerank-v4.0-fast`. |
+| Resource group | `rg-weu-aaih-hindsight-prod` | Tags per host-subscription convention (placeholders in the repo). |
+| ACA environment | `cae-weu-aaih-hindsight-prod` | Workload-profile environment, Consumption profile, infrastructure subnet `snet-aca` (10.60.0.0/24), external ingress. |
+| API app | `ca-weu-aaih-hindsight-api-prod` | 1 vCPU / 2 GiB, **min 1 / max 1 replica** (see worker identity note), external ingress :8888, startup/liveness `/health/live`, readiness `/health/ready`. |
+| Control Plane app | `ca-weu-aaih-hindsight-cp-prod` | 0.25 vCPU / 0.5 GiB, scale 0–1, external ingress :9999, protected by `HINDSIGHT_CP_ACCESS_KEY`; optional Entra ID login via ACA built-in auth (`cpEntraClientId`). Talks to the API through its public FQDN (traffic between apps of one environment stays inside the environment). |
+| PostgreSQL | `psql-weu-aaih-hindsight-prod` | PG 17, `Standard_B2ms`, 32 GiB autogrow, PITR 14 days, private access via `snet-postgres` (10.60.1.0/28) + zone `hindsight.private.postgres.database.azure.com`, password auth. |
+| Key Vault | `kvweuaaihhindsightprod` | RBAC mode; UAMI gets *Key Vault Secrets User*. Purge protection off during iteration (parameter). |
+| Managed identity | `id-weu-aaih-hindsight-prod` | User-assigned, attached to both apps. |
+| Log Analytics | `log-weu-aaih-hindsight-prod` | ACA logs; Hindsight set to `HINDSIGHT_API_LOG_FORMAT=json`. |
+| Foundry | `ais-sdc-aaih-hindsight-prod` | Dedicated AI Services account, S0, key auth enabled; deployments `gpt-5-mini`, `text-embedding-3-small`, `Cohere-rerank-v4.0-fast`. |
 
-**Container images:** pin a version tag (and ideally the digest) of
-`ghcr.io/vectorize-io/hindsight-api:<version>-slim` and
-`ghcr.io/vectorize-io/hindsight-control-plane:<version>`. Images are Cosign-signed
-(keyless OIDC) — verify once in CI. If org policy requires a private registry, import via
-`az acr import` and pull from ACR instead of ghcr.io.
+**Container images:** pinned to `0.9.2`. Images are Cosign-signed (keyless OIDC) — verify once
+before the first deployment. If org policy requires a private registry, import via
+`az acr import` and pull from ACR instead of ghcr.io (open item 4).
 
 **Worker identity (important):** Hindsight's background worker identifies itself by
 hostname, which changes on every container restart — tasks claimed by a dead identity
-stay parked. Set `HINDSIGHT_API_WORKER_ID` to a stable value. With the internal worker and
-a single API replica this is one env var. If we later scale the API out, disable the
-internal worker (`HINDSIGHT_API_WORKER_ENABLED=false`) and run a dedicated worker app with
+stay parked. `HINDSIGHT_API_WORKER_ID` is fixed to `hindsight-weu-prod`. With the internal
+worker and a single API replica this is one env var. If we later scale the API out, disable
+the internal worker (`HINDSIGHT_API_WORKER_ENABLED=false`) and run a dedicated worker app with
 its own fixed ID (the API itself is stateless and scales freely; only the worker needs a
 stable identity). Before removing a worker: `hindsight-admin decommission-worker <id>`.
 
@@ -100,16 +109,11 @@ stable identity). Before removing a worker: `hindsight-admin decommission-worker
 | `pg_diskann` (DiskANN) | **0.6.5** on PG 14–18 (GA line; product quantization is preview) |
 | pgvectorscale (Timescale) | Not offered on Flexible Server — irrelevant: Hindsight's `pgvectorscale` mode natively uses **`pg_diskann` on Azure** |
 
-Enable both extensions at the server level (allowlist) and in the database:
-
-```bash
-az postgres flexible-server parameter set \
-  --resource-group RG-WEU-HINDSIGHT-DEV --server-name psql-weu-hindsight-dev \
-  --name azure.extensions --value "VECTOR,PG_DISKANN"
-```
+The Bicep sets the server allowlist (`azure.extensions = VECTOR,PG_DISKANN`) and creates the
+`hindsight` database. Inside the database, Hindsight creates `vector` on first start; create
+`pg_diskann` once by hand (from inside the VNet):
 
 ```sql
-CREATE DATABASE hindsight;
 \c hindsight
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS pg_diskann CASCADE;
@@ -143,70 +147,79 @@ store raw multilingual documents at volume.
 |---|---|---|
 | SKU | `Standard_B2ms` (2 vCore, 8 GiB) ≈ fits pgvector HNSW in RAM at team scale | `Standard_D2ds_v5`+ when recall latency or CPU credits pinch |
 | Storage | 32 GiB (autogrow on) | 128 GiB+ |
-| HA | Off (dev/team stage) | Zone-redundant HA for prod hardening |
+| HA | Off (team stage) | Zone-redundant HA for prod hardening |
 | Backups | PITR **14 days** (default 7) | + geo-redundant backup if the memory estate becomes business-critical |
-| Connectivity | Private access (VNet integration or private endpoint) + `sslmode=require` | — |
-| Users | Dedicated `hindsight` DB role (no server admin); password in Key Vault | Entra ID DB auth is possible but Hindsight expects a static `DATABASE_URL` — token rotation doesn't fit; keep password auth for this service. |
+| Connectivity | Private access (delegated subnet + private DNS zone) + `sslmode=require` | — |
+| Users | Phase 1: the administrator login `hindsight` (single-purpose server) | Dedicated least-privilege role at hardening. Entra ID DB auth is possible but Hindsight expects a static `DATABASE_URL` — token rotation doesn't fit; keep password auth for this service. |
 | Pool | Defaults (`min 5 / max 100`) are fine; Flexible Server `max_connections` on 8 GiB ≈ 859 | Add PgBouncer (built-in) only with many replicas — then set `HINDSIGHT_API_MIGRATION_DATABASE_URL` to the direct port 5432, since migrations must bypass the pooler. |
 
 ## 5. Model wiring (Azure AI Foundry)
 
 | Role | Deployment | Hindsight provider | Notes |
 |---|---|---|---|
-| LLM (fact extraction, entity resolution, reflect, consolidation) | `gpt-5-mini` (Data Zone Standard EU) | `openai` | Base URL **must** be `https://<resource>.openai.azure.com/openai/v1` — resource root returns 404. `HINDSIGHT_API_LLM_MODEL` = the **deployment name**. Fallback URL shape if `/openai/v1` is unavailable: `.../openai/deployments/<deployment>?api-version=<ver>`. |
-| Embeddings | `text-embedding-3-small` (1536 dims) | `openai` | ⚠️ **Dimension lock:** once memories exist, the embedding dimension cannot change without wiping/re-embedding. Fix the model *before* first retain. 1536 ≤ 2000, so HNSW and DiskANN both index it. |
-| Reranker | `Cohere-rerank-v4.0-fast` (Data Zone Standard EU) | `cohere` + custom base URL | `HINDSIGHT_API_RERANKER_COHERE_BASE_URL` = full invoke URL (e.g. `https://<deployment>.<region>.models.ai.azure.com/v2/rerank`). Configure failover member 1 = `rrf` so recall degrades gracefully instead of failing. |
+| LLM (fact extraction, entity resolution, reflect, consolidation) | `gpt-5-mini` 2025-08-07, Data Zone Standard, 50K TPM | `openai` | Base URL **must** be `https://<account>.openai.azure.com/openai/v1` — resource root returns 404. `HINDSIGHT_API_LLM_MODEL` = the **deployment name**. Fallback URL shape if `/openai/v1` is unavailable: `.../openai/deployments/<deployment>?api-version=<ver>`. |
+| Embeddings | `text-embedding-3-small` (1536 dims), Data Zone Standard, 120K TPM, `NoAutoUpgrade` | `openai` | ⚠️ **Dimension lock:** once memories exist, the embedding dimension cannot change without wiping/re-embedding. Fix the model *before* first retain. 1536 ≤ 2000, so HNSW and DiskANN both index it. |
+| Reranker | `Cohere-rerank-v4.0-fast`, Data Zone Standard, capacity 500 (catalog default) | `cohere` + custom base URL, failover `rrf` | `HINDSIGHT_API_RERANKER_COHERE_BASE_URL` = full invoke URL, used verbatim (query string allowed). Read the target URI from the deployment page after the first deployment, set `rerankInvokeUrl`, redeploy. Until then the template runs `HINDSIGHT_API_RERANKER_PROVIDER=rrf`. |
 
-If ANDRITZ policy disables key-based auth on AI resources, front the model endpoints with
-our **APIM AI Gateway** (managed-identity backend auth) and point Hindsight's base URLs at
-APIM with a subscription key — Hindsight only needs an OpenAI-compatible/Cohere-compatible
-HTTPS endpoint plus a key.
+All three models are offered as Data Zone Standard in swedencentral and westeurope (verified
+September 8, 2026 via the model catalog). Key-based auth on Foundry accounts is allowed in the
+target subscription (the existing team resources run with it). If that policy changes, front
+the model endpoints with our **APIM AI Gateway** (managed-identity backend auth) and point
+Hindsight's base URLs at APIM with a subscription key — Hindsight only needs an
+OpenAI-compatible/Cohere-compatible HTTPS endpoint plus a key.
 
 ## 6. Configuration reference (API app)
 
-Secrets (`@kv` = Key Vault reference via managed identity) — everything else is plain env.
+Implemented in [`infra/modules/containerapps.bicep`](infra/modules/containerapps.bicep);
+`@kv` = Key Vault secret reference via the user-assigned identity. All variable names verified
+against the Hindsight 0.9 configuration reference.
 
 ```bash
 # --- Database -------------------------------------------------------------
 HINDSIGHT_API_DATABASE_URL=@kv:psql-connection-string
-#   postgresql://hindsight:<pw>@psql-weu-hindsight-dev.postgres.database.azure.com:5432/hindsight?sslmode=require
+#   postgresql://hindsight:<url-encoded-pw>@psql-weu-aaih-hindsight-prod.<zone>:5432/hindsight?sslmode=require
 HINDSIGHT_API_VECTOR_EXTENSION=pgvector          # later: pgvectorscale (= pg_diskann on Azure)
 
 # --- LLM (Azure OpenAI via Foundry) ---------------------------------------
 HINDSIGHT_API_LLM_PROVIDER=openai
-HINDSIGHT_API_LLM_BASE_URL=https://<aoai-resource>.openai.azure.com/openai/v1
+HINDSIGHT_API_LLM_BASE_URL=https://ais-sdc-aaih-hindsight-prod.openai.azure.com/openai/v1
 HINDSIGHT_API_LLM_MODEL=gpt-5-mini               # deployment name
-HINDSIGHT_API_LLM_API_KEY=@kv:aoai-api-key
+HINDSIGHT_API_LLM_API_KEY=@kv:foundry-api-key
 HINDSIGHT_API_LLM_OUTPUT_LANGUAGE=English        # team ground rule: shared memory in EN
 
 # --- Embeddings (Azure OpenAI via Foundry) --------------------------------
 HINDSIGHT_API_EMBEDDINGS_PROVIDER=openai
-HINDSIGHT_API_EMBEDDINGS_OPENAI_BASE_URL=https://<aoai-resource>.openai.azure.com/openai/v1
+HINDSIGHT_API_EMBEDDINGS_OPENAI_BASE_URL=https://ais-sdc-aaih-hindsight-prod.openai.azure.com/openai/v1
 HINDSIGHT_API_EMBEDDINGS_OPENAI_MODEL=text-embedding-3-small   # deployment name, 1536 dims
-HINDSIGHT_API_EMBEDDINGS_OPENAI_API_KEY=@kv:aoai-api-key
+HINDSIGHT_API_EMBEDDINGS_OPENAI_API_KEY=@kv:foundry-api-key
 # NOTE: embeddings env vars carry the provider segment (…_OPENAI_…) — a frequent pitfall.
 
-# --- Reranker (Cohere Rerank on Foundry, fail-open) ------------------------
-HINDSIGHT_API_RERANKER_PROVIDER=cohere
-HINDSIGHT_API_RERANKER_COHERE_BASE_URL=https://<rerank-deployment>.<region>.models.ai.azure.com/v2/rerank
-HINDSIGHT_API_RERANKER_COHERE_MODEL=Cohere-rerank-v4.0-fast
-HINDSIGHT_API_RERANKER_COHERE_API_KEY=@kv:rerank-api-key
-HINDSIGHT_API_RERANKER_1_PROVIDER=rrf            # failover: keep fusion order, don't fail recall
+# --- Reranker (first deployment: fail-open fusion order) -------------------
+HINDSIGHT_API_RERANKER_PROVIDER=rrf
+# --- Reranker (after rerankInvokeUrl is set) --------------------------------
+# HINDSIGHT_API_RERANKER_PROVIDER=cohere
+# HINDSIGHT_API_RERANKER_COHERE_BASE_URL=<full invoke URL of the Cohere deployment>
+# HINDSIGHT_API_RERANKER_COHERE_MODEL=Cohere-rerank-v4.0-fast
+# HINDSIGHT_API_RERANKER_COHERE_API_KEY=@kv:foundry-api-key
+# HINDSIGHT_API_RERANKER_1_PROVIDER=rrf          # failover: keep fusion order, don't fail recall
 
 # --- AuthN / server -------------------------------------------------------
 HINDSIGHT_API_TENANT_EXTENSION=hindsight_api.extensions.builtin.tenant:ApiKeyTenantExtension
 HINDSIGHT_API_TENANT_API_KEY=@kv:hindsight-tenant-key
-HINDSIGHT_API_WORKER_ID=hindsight-weu-dev        # stable worker identity across restarts
+HINDSIGHT_API_WORKER_ID=hindsight-weu-prod       # stable worker identity across restarts
 HINDSIGHT_API_LOG_FORMAT=json                    # structured logs → Log Analytics
+HINDSIGHT_API_HOST=0.0.0.0
+HINDSIGHT_API_PORT=8888
 # HINDSIGHT_API_MCP_ENABLED=true                 # default; MCP at /mcp/{bank_id}/
 ```
 
 Control Plane app:
 
 ```bash
-HINDSIGHT_CP_DATAPLANE_API_URL=https://ca-weu-hindsight-api-dev.internal.<env>.azurecontainerapps.io
+PORT=9999
+HINDSIGHT_CP_DATAPLANE_API_URL=https://<api-fqdn>
 HINDSIGHT_CP_DATAPLANE_API_KEY=@kv:hindsight-tenant-key
-HINDSIGHT_CP_ACCESS_KEY=@kv:cp-access-key        # plus ACA built-in Entra ID auth on ingress
+HINDSIGHT_CP_ACCESS_KEY=@kv:cp-access-key        # plus optional ACA built-in Entra ID auth on ingress
 ```
 
 ## 7. Team access (the actual point)
@@ -222,34 +235,43 @@ One server, one shared tenant key (phase 1), memory organized in **banks**:
 Client wiring per team member:
 
 ```bash
-# Claude Code — MCP (recommended; retain/recall/reflect become native tools)
-claude mcp add --transport http hindsight https://<api-host>/mcp/team-ide/ \
+# Claude Code — hindsight-memory plugin in remote mode (recommended: auto-recall/retain,
+# knowledge tools; the plugin skips the local daemon when hindsightApiUrl is set)
+cat > ~/.hindsight/claude-code.json << 'JSON'
+{ "hindsightApiUrl": "https://<api-fqdn>", "hindsightApiToken": "<tenant-key>", "bankId": "team-ide" }
+JSON
+
+# Claude Code — plain MCP (retain/recall/reflect become native tools)
+claude mcp add --transport http hindsight https://<api-fqdn>/mcp/team-ide/ \
   --header "Authorization: Bearer <tenant-key>"
 
 # Hindsight CLI (used by the hindsight-self-hosted skill)
 mkdir -p ~/.hindsight && cat > ~/.hindsight/config << 'EOF'
-api_url = "https://<api-host>"
+api_url = "https://<api-fqdn>"
 api_key = "<tenant-key>"
 EOF
 ```
 
-The repo-local `hindsight-self-hosted` skill then gives every Claude Code instance the same
-retain/recall workflow against the shared server. Bank/tag design (mission statements, tag
-schema, dispositions) is a follow-up workstream — run the `hindsight-architect` skill once
-the service is up.
+The tenant key is distributed through a shared 1Password vault and loaded by the
+`secrets-management/` loader, never pasted into repo files. The repo-local
+`hindsight-self-hosted` skill then gives every Claude Code instance the same retain/recall
+workflow against the shared server. Bank/tag design (mission statements, tag schema,
+dispositions) is a follow-up workstream — run the `hindsight-architect` skill once the
+service is up. Valuable local memories can move over with the document export/import API
+(present in 0.9.2).
 
 ## 8. Rollout phases
 
-| Phase | Scope | Effort |
+| Phase | Scope | Status |
 |---|---|---|
-| **0 — Foundation** | Subscription decision, RG, VNet (+ subnets: ACA, PG), Key Vault, Log Analytics, UAMI. Bicep from the start (`infra/` in this repo, deployed via GitHub Actions like APIOps). | ~0.5 day |
-| **1 — Data layer** | PG Flexible Server (PG 17, private access), allowlist `VECTOR,PG_DISKANN`, create DB + role + extensions, secrets to KV. | ~0.5 day |
-| **2 — Models** | Foundry deployments: `gpt-5-mini`, `text-embedding-3-small`, `Cohere-rerank-v4.0-fast` (DZ-EU); keys/quotas to KV. **Freeze the embedding model here.** | ~0.5 day |
-| **3 — Runtime** | ACA env + API app (slim, env block above) + Control Plane app (Entra auth). Smoke test: create bank, retain, recall, reflect via `curl`/CLI; check `/metrics`, logs. | ~0.5–1 day |
-| **4 — Team onboarding** | Distribute API host + key (1PW shared vault), MCP + CLI setup per member, bank conventions, short runbook. Migrate/export valuable local memories where worth it. | ~0.5 day |
-| **5 — Hardening** | APIM front door (per-user subscriptions, Entra JWT, passthrough header for per-caller identity), private endpoints for Foundry/KV, PG HA + tuned backups, OTel traces → App Insights (`HINDSIGHT_API_OTEL_TRACES_ENABLED=true`), alerting. | on demand |
+| **0 — Foundation** | Subscription decision, naming, tags, Bicep for RG, VNet + subnets, Key Vault, Log Analytics, UAMI. | IaC written and compiled (Sep 8, 2026). **Subscription decision pending.** |
+| **1 — Data layer** | PG Flexible Server (PG 17, private access), allowlist `VECTOR,PG_DISKANN`, database, secrets to KV. | In the same Bicep deployment. |
+| **2 — Models** | Dedicated Foundry account with `gpt-5-mini`, `text-embedding-3-small`, `Cohere-rerank-v4.0-fast` (Data Zone Standard); key1 to KV. **Freeze the embedding model here.** | In the same Bicep deployment. |
+| **3 — Runtime** | ACA env + API app (slim, env block above) + Control Plane app. `what-if`, approval, `create`, then: `pg_diskann`, rerank URL, smoke test (create bank, retain, recall, reflect), check `/metrics` and logs. | Ready to preview. ~1 hour incl. PostgreSQL provisioning. |
+| **4 — Team onboarding** | Distribute API host + key (1PW shared vault), plugin remote mode / MCP / CLI setup per member, bank conventions, short runbook. Migrate/export valuable local memories where worth it. | ~0.5 day, after phase 3. |
+| **5 — Hardening** | APIM front door (per-user subscriptions, Entra JWT, passthrough header for per-caller identity), private endpoints for Foundry/KV, KV purge protection, least-privilege DB role, PG HA + tuned backups, OTel traces → App Insights (`HINDSIGHT_API_OTEL_TRACES_ENABLED=true`), alerting. | On demand. |
 
-## 9. Cost (rough, monthly, dev/team stage)
+## 9. Cost (rough, monthly, team stage)
 
 | Item | Estimate |
 |---|---|
@@ -264,21 +286,34 @@ conversation, not a quote.
 
 ## 10. Open items
 
-1. **Subscription & governance** — which subscription hosts this (ECM Shared vs. AAIH)?
-   Final naming per ANDRITZ convention.
-2. **Key-auth policy on Foundry** — if disabled, route models through APIM AI Gateway
-   (managed identity) instead of direct keys.
-3. **Rerank endpoint URL shape** — confirm the exact invoke URL (`/v1` vs `/v2/rerank`)
-   after deploying the Cohere model; set `HINDSIGHT_API_RERANKER_COHERE_BASE_URL` accordingly.
+1. **Subscription & governance — decision needed.** Proposal: the team's Claude Code
+   subscription (AAIH), naming and tags per its convention (Section 2). Alternative: ECM
+   Shared. Real tag values go into the gitignored parameter file.
+2. ~~Key-auth policy on Foundry~~ — verified allowed in the proposed subscription (existing
+   team resources run with key auth). Re-check only if the subscription changes.
+3. **Rerank invoke URL** — read from the Foundry deployment page after the first deployment,
+   set `rerankInvokeUrl`, redeploy. Until then recall runs with `rrf`.
 4. **ghcr.io egress** — confirm pulls from ghcr.io are acceptable or import images to ACR.
 5. **Data classification** — shared memory will contain internal engineering knowledge;
    confirm internal-only classification and retention expectations before onboarding.
+6. **Least-privilege DB role** — phase 1 uses the administrator login; create a dedicated role
+   and re-point the connection string at hardening.
+7. **Pipeline** — no GitHub Actions from this public repo into the corporate tenant; revisit
+   when the topic moves to an internal repo.
 
 ## 11. Sources
 
-- Hindsight docs (local skill `hindsight-docs`): installation, configuration, storage,
-  services, MCP server, monitoring — including the Azure-specific notes on
-  `pg_diskann`, Azure OpenAI URL shapes, and the Foundry-compatible rerank endpoint.
+- Hindsight docs (local skill `hindsight-docs`, 0.9 line): installation, configuration
+  (every variable in Section 6 checked), storage, services, MCP server, monitoring — including
+  the Azure-specific notes on `pg_diskann`, Azure OpenAI URL shapes, and the Cohere-compatible
+  rerank endpoint; `cross_encoder.py` in the Hindsight repo for the verbatim base-URL behavior.
+- ghcr.io image configs (September 8, 2026): `hindsight-api:0.9.2-slim` exposes 8888,
+  `hindsight-control-plane:0.9.2` exposes 9999.
+- hindsight-memory Claude Code plugin 0.7.2 README: remote mode via `hindsightApiUrl` /
+  `hindsightApiToken`.
 - Microsoft Learn (verified Sep 2026): pg_diskann 0.6.5 / vector 0.8.2 extension matrix
   per PG version; `azure.extensions` allowlist procedure; Cohere-rerank-v4.0 Data Zone
-  Standard EU availability.
+  Standard availability.
+- Azure inventory (September 8, 2026, read-only): Resource Graph across all subscriptions,
+  model catalog for swedencentral/westeurope, Flexible Server capabilities for westeurope,
+  existing naming/tag convention in the proposed subscription.

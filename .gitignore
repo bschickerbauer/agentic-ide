@@ -6,3 +6,6 @@
 
 # Scratch
 *.tmp
+
+# Bicep parameter files with real governance values stay local
+*.local.bicepparam
